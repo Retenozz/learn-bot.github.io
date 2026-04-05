@@ -265,12 +265,14 @@ export function ClassroomChatRoom({ classroomId }: ClassroomChatRoomProps) {
     event.target.value = "";
   }
 
-  function handleCreateQuizFromChat() {
+  async function handleCreateQuizFromChat() {
     if (!classroom) {
       return;
     }
 
-    const result = createGeneratedQuizSession({
+    setUploadFeedback("กำลังสร้างควิซจากไฟล์... รอสักครู่นะครับ");
+
+    const result = await createGeneratedQuizSession({
       title: `Quiz from ${classroom.name}`,
       sourcePath: `/classroom/${encodeURIComponent(classroom.id)}`,
       sourceTitle: classroom.name,
