@@ -149,7 +149,7 @@ export function LearningProvider({ children }: { children: ReactNode }) {
         const fetchPromise = supabase
           .from("user_learning_state")
           .select("attempts, generated_quizzes, generated_flashcards")
-          .maybeSingle() as Promise<{ data: LearningStateRow | null; error: unknown }>;
+          .maybeSingle() as unknown as Promise<{ data: LearningStateRow | null; error: unknown }>;
 
         const { data: rawData, error } = await withTimeout(
           fetchPromise,
