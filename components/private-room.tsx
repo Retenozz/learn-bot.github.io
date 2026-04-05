@@ -155,6 +155,19 @@ export function PrivateRoom() {
         console.error("Failed to load private room", error);
       }
 
+      // If no row exists yet for this user (e.g. signed up before the trigger
+      // was in place), create one now so future saves work correctly.
+      if (!error && data === null) {
+        await supabase
+          .from("user_private_room_state")
+          .insert({ user_id: user.id, messages: [] })
+          .then(({ error: insertError }) => {
+            if (insertError && !isMissingTableError(insertError)) {
+              console.error("Failed to initialise private room row", insertError);
+            }
+          });
+      }
+
       // Restore saved messages and rebuild any attachment chunks that were
       // lost during Supabase JSONB serialisation.
       const saved =
