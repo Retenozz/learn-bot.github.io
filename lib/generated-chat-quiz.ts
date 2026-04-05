@@ -27,14 +27,56 @@ type CreateGeneratedQuizSessionInput = {
 };
 
 const genericDistractors = [
-  "not mentioned in the chat",
+  "not mentioned in the uploaded files",
   "an unrelated detail",
   "a different point from another topic",
-  "something the chat never confirmed",
+  "something the files never confirmed",
 ];
 
 function rotateOptions(options: string[], offset: number) {
   return options.map((_, index) => options[(index + offset) % options.length]);
+}
+
+/**
+ * Build facts prioritising attachment content over raw chat text.
+ * If attachments are present in the conversation, we only use facts that
+ * originate from those attachments (excerpt / chunks / citations).
+ * We fall back to chat-text facts only when no attachment content is found.
+ */
+function buildAttachmentPriorityFacts(messages: ChatQuizMessage[]): string[] {
+  const attachmentFacts: string[] = [];
+
+  for (const message of messages) {
+    for (const attachment of message.attachments ?? []) {
+      if (attachment.excerpt) {
+        attachmentFacts.push(attachment.excerpt);
+      }
+      for (const chunk of (attachment.chunks ?? []).slice(0, 6)) {
+        attachmentFacts.push(chunk.content);
+      }
+    }
+    for (const citation of message.citations ?? []) {
+      attachmentFacts.push(citation.snippet);
+    }
+  }
+
+  // Deduplicate and normalise
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  for (const raw of attachmentFacts) {
+    const key = raw.trim().toLowerCase();
+    if (key.length >= 18 && key.length <= 240 && !seen.has(key)) {
+      seen.add(key);
+      unique.push(raw.trim());
+    }
+  }
+
+  if (unique.length >= 2) {
+    return unique.slice(0, 18);
+  }
+
+  // No attachment content — fall back to full chat facts
+  return buildChatStudyFacts(messages);
 }
 
 function buildQuestions(sessionId: string, facts: string[], subject: QuizSubject) {
@@ -77,12 +119,12 @@ function buildQuestions(sessionId: string, facts: string[], subject: QuizSubject
     return {
       id: `${sessionId}-q${index + 1}`,
       subject,
-      topic: "Chat review",
-      concept: "Key ideas from the conversation",
-      prompt: `Fill in the missing detail from the chat:\n${item.prompt}`,
+      topic: "File review",
+      concept: "Key ideas from the uploaded materials",
+      prompt: `Fill in the missing detail from the uploaded file:\n${item.prompt}`,
       options: optionSet,
       correctIndex,
-      explanation: `This answer comes from the chat detail: ${item.fact}`,
+      explanation: `This answer comes from the uploaded file: ${item.fact}`,
     } satisfies QuizQuestion;
   });
 }
@@ -90,13 +132,18 @@ function buildQuestions(sessionId: string, facts: string[], subject: QuizSubject
 export function createGeneratedQuizSession(
   input: CreateGeneratedQuizSessionInput,
 ) {
-  const facts = buildChatStudyFacts(input.messages);
+  const hasAttachments = input.messages.some(
+    (m) => (m.attachments ?? []).length > 0,
+  );
+
+  const facts = buildAttachmentPriorityFacts(input.messages);
 
   if (facts.length < 2) {
     return {
       ok: false as const,
-      message:
-        "Add a bit more discussion or at least one study file before generating a quiz from this chat.",
+      message: hasAttachments
+        ? "ไม่พบเนื้อหาที่ชัดเจนในไฟล์ที่อัปโหลด ลองอัปโหลดไฟล์ที่มีข้อความมากขึ้น แล้วกด Quiz อีกครั้งครับ"
+        : "อัปโหลดไฟล์เรียนในแชทก่อน แล้วกด \"Quiz from this chat\" เพื่อให้ควิซมาจากเนื้อหาไฟล์ครับ",
     };
   }
 
@@ -107,16 +154,20 @@ export function createGeneratedQuizSession(
   if (!questions.length) {
     return {
       ok: false as const,
-      message:
-        "I could not find enough concrete facts in the chat yet. Try adding more lesson detail or an uploaded document first.",
+      message: hasAttachments
+        ? "ไฟล์ที่อัปโหลดมีข้อความ แต่ยังหาประเด็นที่จะออกเป็นข้อสอบได้ไม่พอ ลองอัปโหลดไฟล์เนื้อหาบทเรียนที่ละเอียดกว่านี้ครับ"
+        : "ยังหาข้อมูลจากแชทไม่พอ ลองอัปโหลดไฟล์บทเรียนก่อนครับ",
     };
   }
+
+  const description = hasAttachments
+    ? "ควิซนี้สร้างจากเนื้อหาในไฟล์ที่อัปโหลดในแชทนี้โดยตรง"
+    : "This quiz was generated from the current chat history and uploaded study materials in the conversation.";
 
   const session: GeneratedQuizSession = {
     id: sessionId,
     title: input.title,
-    description:
-      "This quiz was generated from the current chat history and uploaded study materials in the conversation.",
+    description,
     sourcePath: input.sourcePath,
     sourceTitle: input.sourceTitle,
     subject,

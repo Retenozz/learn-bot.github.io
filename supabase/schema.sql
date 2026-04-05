@@ -371,6 +371,18 @@ for select
 to authenticated
 using (auth.uid() = id);
 
+-- Allow any authenticated user to read profiles that have a study_id.
+-- This is required so that study_squad_directory (a VIEW over profiles)
+-- can resolve other users' rows during Add Friend lookups.
+-- Without this, the strict "own row only" policy blocks all cross-user
+-- study_id queries, causing every Add Friend attempt to return "not found".
+drop policy if exists "Users can read profiles for squad directory" on public.profiles;
+create policy "Users can read profiles for squad directory"
+on public.profiles
+for select
+to authenticated
+using (study_id is not null);
+
 drop policy if exists "Users can insert own profile" on public.profiles;
 create policy "Users can insert own profile"
 on public.profiles
