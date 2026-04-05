@@ -69,6 +69,14 @@ const quickActions = [
   "Explain this lesson simply",
 ];
 
+// ── Timeout helper: race a promise against a deadline ─────────────────────
+function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((resolve) => window.setTimeout(() => resolve(fallback), ms)),
+  ]);
+}
+
 /**
  * When attachments are round-tripped through Supabase JSONB the `chunks`
  * array can be missing or empty (size limits / partial serialisation).
@@ -245,12 +253,11 @@ export function PrivateRoom() {
   const [uploadFeedback, setUploadFeedback] = useState<string | null>(null);
   const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false);
   const [showQuizOptions, setShowQuizOptions] = useState(false);
+  // hydrated: true = โหลด Supabase เสร็จแล้ว (หรือ timeout แล้ว)
   const [hydrated, setHydrated] = useState(false);
+  // loadSlow: true = รอ Supabase นานกว่า 2.5 วิ — แสดง banner เตือน
+  const [loadSlow, setLoadSlow] = useState(false);
 
-  // dirtyCount tracks user-driven changes (send / upload / assistant reply).
-  // The save effect only fires when dirtyCount > 0, preventing the initial
-  // hydration from overwriting Supabase with blank initialMessages before
-  // the load effect has completed.
   const [dirtyCount, setDirtyCount] = useState(0);
 
   const scrollAreaRef = useRef<HTMLDivElement>(null);
@@ -267,56 +274,76 @@ export function PrivateRoom() {
     let cancelled = false;
 
     async function loadPrivateRoom() {
+      // รอแค่ auth เท่าที่จำเป็น — ถ้า loading ยังไม่เสร็จ ให้รอต่อไป
       if (loading) {
         return;
       }
 
+      // ไม่ล็อกอิน — แสดง initialMessages ทันที
       if (!user) {
-        setMessages(initialMessages);
-        setHydrated(true);
+        if (!cancelled) {
+          setMessages(initialMessages);
+          setHydrated(true);
+        }
         return;
       }
 
-      setHydrated(false);
+      // เริ่ม slow-indicator timer (2.5 วิ)
+      const slowTimer = window.setTimeout(() => {
+        if (!cancelled) setLoadSlow(true);
+      }, 2500);
 
-      const { data: rawData, error } = await supabase
-        .from("user_private_room_state")
-        .select("messages")
-        .maybeSingle();
-      const data = rawData as { messages: Message[] | null } | null;
-
-      if (cancelled) {
-        return;
-      }
-
-      if (error && !isMissingTableError(error)) {
-        console.error("Failed to load private room", error);
-      }
-
-      // If no row exists yet for this user (e.g. signed up before the trigger
-      // was in place), create one now so future saves work correctly.
-      if (!error && data === null) {
-        await supabase
+      try {
+        // race Supabase query กับ timeout 6 วิ
+        const fetchPromise = supabase
           .from("user_private_room_state")
-          .insert({ user_id: user.id, messages: [] })
-          .then(({ error: insertError }) => {
-            if (insertError && !isMissingTableError(insertError)) {
-              console.error("Failed to initialise private room row", insertError);
-            }
-          });
+          .select("messages")
+          .maybeSingle();
+
+        const { data: rawData, error } = await withTimeout(
+          fetchPromise as Promise<{ data: { messages: Message[] | null } | null; error: unknown }>,
+          6000,
+          { data: null, error: null },
+        );
+
+        if (cancelled) return;
+
+        if (error && !isMissingTableError(error as Parameters<typeof isMissingTableError>[0])) {
+          console.error("Failed to load private room", error);
+        }
+
+        const data = rawData as { messages: Message[] | null } | null;
+
+        // ถ้ายังไม่มี row ให้ insert ใหม่ (ไม่ต้องรอผล)
+        if (!error && data === null) {
+          void supabase
+            .from("user_private_room_state")
+            .insert({ user_id: user.id, messages: [] })
+            .then(({ error: insertError }) => {
+              if (insertError && !isMissingTableError(insertError)) {
+                console.error("Failed to initialise private room row", insertError);
+              }
+            });
+        }
+
+        const saved =
+          data?.messages && data.messages.length
+            ? restoreMessages(data.messages as Message[])
+            : initialMessages;
+
+        setMessages(saved);
+      } catch (err) {
+        console.error("loadPrivateRoom unexpected error", err);
+        // fallback ทันทีถ้า error
+        if (!cancelled) setMessages(initialMessages);
+      } finally {
+        window.clearTimeout(slowTimer);
+        if (!cancelled) {
+          setLoadSlow(false);
+          setHydrated(true);
+          setDirtyCount(0);
+        }
       }
-
-      // Restore saved messages and rebuild any attachment chunks that were
-      // lost during Supabase JSONB serialisation.
-      const saved =
-        data?.messages && data.messages.length
-          ? restoreMessages(data.messages as Message[])
-          : initialMessages;
-
-      setMessages(saved);
-      setHydrated(true);
-      // Reset dirty count so the save effect doesn't fire right after loading.
-      setDirtyCount(0);
     }
 
     void loadPrivateRoom();
@@ -570,8 +597,9 @@ export function PrivateRoom() {
     router.push(`/flashcards?deck=${result.deck.id}`);
   }
 
-  // ── Loading state ───────────────────────────────────────────────────────
-  if ((loading || !hydrated) && user) {
+  // ── Loading state — แสดงเฉพาะกรณี auth ยังไม่เสร็จ (loading=true)
+  // และ Supabase ยังไม่ได้ถูก query เลย เพื่อลดเวลาที่ผู้ใช้เห็น spinner
+  if (loading && !hydrated) {
     return (
       <AppShell
         activeHref="/dashboard"
@@ -586,9 +614,21 @@ export function PrivateRoom() {
         }
       >
         <div className="flex h-full items-center justify-center rounded-[24px] border border-[#d8e5f2] bg-[#f6fbff]">
-          <p className="text-base font-black text-[#18317a]">
-            Loading your private room...
-          </p>
+          <div className="flex flex-col items-center gap-3">
+            {/* Animated dots */}
+            <div className="flex items-center gap-2">
+              {[0, 1, 2].map((i) => (
+                <span
+                  key={i}
+                  className="h-3 w-3 animate-bounce rounded-full bg-[#1b2c77]"
+                  style={{ animationDelay: `${i * 0.15}s` }}
+                />
+              ))}
+            </div>
+            <p className="text-base font-black text-[#18317a]">
+              กำลังโหลดห้องส่วนตัว...
+            </p>
+          </div>
         </div>
       </AppShell>
     );
@@ -619,6 +659,15 @@ export function PrivateRoom() {
       >
         <div className="grid h-full min-h-0 gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
           <div className="flex h-full min-h-0 flex-col">
+
+            {/* Slow-load banner — แสดงเมื่อ Supabase ใช้เวลานานกว่า 2.5 วิ */}
+            {loadSlow && !hydrated && (
+              <div className="mb-2 flex items-center gap-3 rounded-[14px] bg-[#fff8e1] px-4 py-3 text-sm font-semibold text-[#7b5b00]">
+                <span className="animate-spin text-base">⏳</span>
+                กำลังโหลดประวัติแชท... อาจใช้เวลาสักครู่ หากช้ามากลองรีเฟรชหน้า
+              </div>
+            )}
+
             <div
               ref={scrollAreaRef}
               className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-white pr-2 pt-2 overscroll-contain"

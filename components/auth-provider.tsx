@@ -38,6 +38,32 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
+// ── localStorage cache ──────────────────────────────────────────────────────
+const PROFILE_CACHE_KEY = "learnbot_profile_cache";
+
+function readCachedProfile(): UserProfile | null {
+  try {
+    if (typeof window === "undefined") return null;
+    const raw = localStorage.getItem(PROFILE_CACHE_KEY);
+    return raw ? (JSON.parse(raw) as UserProfile) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedProfile(profile: UserProfile | null) {
+  try {
+    if (typeof window === "undefined") return;
+    if (profile) {
+      localStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify(profile));
+    } else {
+      localStorage.removeItem(PROFILE_CACHE_KEY);
+    }
+  } catch {
+    // localStorage unavailable — ignore
+  }
+}
+
 export function buildStableStudyId(userId: string) {
   const compact = userId.replace(/-/g, "").slice(0, 8).toUpperCase();
   return `ID${compact}`;
@@ -171,12 +197,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [supabase] = useState(() => createClient());
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
-  const [profile, setProfile] = useState<UserProfile | null>(null);
+  // เริ่มต้นด้วย cached profile — UI แสดงชื่อผู้ใช้ได้ทันทีโดยไม่ต้องรอ Supabase
+  const [profile, setProfile] = useState<UserProfile | null>(() => readCachedProfile());
   const [loading, setLoading] = useState(true);
+
+  function applyProfile(next: UserProfile | null) {
+    setProfile(next);
+    writeCachedProfile(next);
+  }
 
   async function refreshProfile() {
     const nextProfile = await fetchProfile(supabase, user);
-    setProfile(nextProfile);
+    applyProfile(nextProfile);
     return nextProfile;
   }
 
@@ -203,7 +235,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     try {
       const data = await upsertProfileRecord(supabase, values);
-      setProfile(data as UserProfile);
+      applyProfile(data as UserProfile);
       return { error: null };
     } catch (error) {
       return {
@@ -221,25 +253,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     setSession(null);
     setUser(null);
-    setProfile(null);
+    applyProfile(null);
   }
 
   useEffect(() => {
     let cancelled = false;
 
     async function bootstrapAuth() {
+      // ── Step 1: getSession เร็ว (~50-200ms) ────────────────────────────
       const {
         data: { session: initialSession },
       } = await supabase.auth.getSession();
 
-      if (cancelled) {
-        return;
-      }
+      if (cancelled) return;
 
+      const initialUser = initialSession?.user ?? null;
       setSession(initialSession);
-      setUser(initialSession?.user ?? null);
-      setProfile(await fetchProfile(supabase, initialSession?.user ?? null));
+      setUser(initialUser);
+
+      // ── Step 2: setLoading(false) ทันที — providers ลูกเริ่ม query ได้เลย
+      // profile จะมาจาก cache ก่อน แล้ว Supabase ตามมาทีหลัง
       setLoading(false);
+
+      // ── Step 3: fetch profile พื้นหลัง (ไม่บล็อก UI) ────────────────
+      if (initialUser) {
+        try {
+          const freshProfile = await fetchProfile(supabase, initialUser);
+          if (!cancelled) {
+            applyProfile(freshProfile);
+          }
+        } catch (err) {
+          console.error("Profile fetch failed silently", err);
+          // ใช้ fallback จาก user metadata
+          if (!cancelled) {
+            applyProfile(buildProfileFallback(initialUser));
+          }
+        }
+      } else {
+        // ไม่ได้ล็อกอิน — ล้าง cache
+        applyProfile(null);
+      }
     }
 
     void bootstrapAuth();
@@ -247,10 +300,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (_event, nextSession) => {
+      if (cancelled) return;
+      const nextUser = nextSession?.user ?? null;
       setSession(nextSession);
-      setUser(nextSession?.user ?? null);
-      setProfile(await fetchProfile(supabase, nextSession?.user ?? null));
+      setUser(nextUser);
       setLoading(false);
+      // fetch profile พื้นหลัง
+      void fetchProfile(supabase, nextUser).then((p) => {
+        if (!cancelled) applyProfile(p);
+      }).catch(() => {
+        if (nextUser && !cancelled) applyProfile(buildProfileFallback(nextUser));
+      });
     });
 
     return () => {

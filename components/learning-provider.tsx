@@ -54,6 +54,36 @@ const EMPTY_QUIZ_SESSIONS: Record<string, GeneratedQuizSession> = {};
 const EMPTY_FLASHCARD_DECKS: Record<string, GeneratedFlashcardDeck> = {};
 const MAX_SAVED_GENERATED_ITEMS = 24;
 
+// ── localStorage cache ────────────────────────────────────────────────────
+const LS_KEY = "learnbot_learning_state_cache";
+
+type LearningCache = {
+  userId: string;
+  attempts: QuizAttempt[];
+  generatedQuizSessions: Record<string, GeneratedQuizSession>;
+  generatedFlashcardDecks: Record<string, GeneratedFlashcardDeck>;
+};
+
+function readLearningCache(userId: string): LearningCache | null {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as LearningCache;
+    // ใช้ cache เฉพาะถ้าเป็น user เดิม
+    return parsed.userId === userId ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeLearningCache(cache: LearningCache) {
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify(cache));
+  } catch {
+    // quota exceeded — ignore
+  }
+}
+
 const LearningContext = createContext<LearningContextValue | undefined>(undefined);
 
 function trimGeneratedItems<T extends { createdAt: string }>(items: Record<string, T>) {
@@ -66,6 +96,14 @@ function trimGeneratedItems<T extends { createdAt: string }>(items: Record<strin
       )
       .slice(0, MAX_SAVED_GENERATED_ITEMS),
   ) as Record<string, T>;
+}
+
+// race a promise against a timeout
+function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
+  ]);
 }
 
 export function LearningProvider({ children }: { children: ReactNode }) {
@@ -88,37 +126,73 @@ export function LearningProvider({ children }: { children: ReactNode }) {
       }
 
       if (!user) {
-        setAttempts(EMPTY_ATTEMPTS);
-        setGeneratedQuizSessions(EMPTY_QUIZ_SESSIONS);
-        setGeneratedFlashcardDecks(EMPTY_FLASHCARD_DECKS);
-        setHydrated(true);
+        if (!cancelled) {
+          setAttempts(EMPTY_ATTEMPTS);
+          setGeneratedQuizSessions(EMPTY_QUIZ_SESSIONS);
+          setGeneratedFlashcardDecks(EMPTY_FLASHCARD_DECKS);
+          setHydrated(true);
+        }
         return;
       }
 
-      setHydrated(false);
-
-      const { data: rawData, error } = await supabase
-        .from("user_learning_state")
-        .select("attempts, generated_quizzes, generated_flashcards")
-        .maybeSingle();
-      const data = rawData as LearningStateRow | null;
-
-      if (cancelled) {
-        return;
+      // ── ใช้ cache ก่อนเพื่อแสดง UI ทันที ──────────────────────────────
+      const cached = readLearningCache(user.id);
+      if (cached && !cancelled) {
+        setAttempts(cached.attempts);
+        setGeneratedQuizSessions(cached.generatedQuizSessions);
+        setGeneratedFlashcardDecks(cached.generatedFlashcardDecks);
+        setHydrated(true); // แสดง UI ได้เลย ไม่ต้องรอ Supabase
       }
 
-      if (error && !isMissingTableError(error)) {
-        console.error("Failed to load learning state", error);
-      }
+      // ── query Supabase พื้นหลัง + timeout 8 วิ ───────────────────────
+      try {
+        const fetchPromise = supabase
+          .from("user_learning_state")
+          .select("attempts, generated_quizzes, generated_flashcards")
+          .maybeSingle() as Promise<{ data: LearningStateRow | null; error: unknown }>;
 
-      setAttempts(data?.attempts ?? EMPTY_ATTEMPTS);
-      setGeneratedQuizSessions(
-        trimGeneratedItems(data?.generated_quizzes ?? EMPTY_QUIZ_SESSIONS),
-      );
-      setGeneratedFlashcardDecks(
-        trimGeneratedItems(data?.generated_flashcards ?? EMPTY_FLASHCARD_DECKS),
-      );
-      setHydrated(true);
+        const { data: rawData, error } = await withTimeout(
+          fetchPromise,
+          8000,
+          { data: null, error: new Error("timeout") },
+        );
+
+        if (cancelled) return;
+
+        if (error && error instanceof Error && error.message !== "timeout") {
+          if (!isMissingTableError(error as Parameters<typeof isMissingTableError>[0])) {
+            console.error("Failed to load learning state", error);
+          }
+        }
+
+        const data = rawData as LearningStateRow | null;
+
+        if (data) {
+          const nextAttempts = data.attempts ?? EMPTY_ATTEMPTS;
+          const nextQuizSessions = trimGeneratedItems(data.generated_quizzes ?? EMPTY_QUIZ_SESSIONS);
+          const nextFlashcardDecks = trimGeneratedItems(data.generated_flashcards ?? EMPTY_FLASHCARD_DECKS);
+
+          if (!cancelled) {
+            setAttempts(nextAttempts);
+            setGeneratedQuizSessions(nextQuizSessions);
+            setGeneratedFlashcardDecks(nextFlashcardDecks);
+
+            // อัปเดต cache ด้วยข้อมูลใหม่จาก Supabase
+            writeLearningCache({
+              userId: user.id,
+              attempts: nextAttempts,
+              generatedQuizSessions: nextQuizSessions,
+              generatedFlashcardDecks: nextFlashcardDecks,
+            });
+          }
+        }
+      } catch (err) {
+        console.error("loadLearningState unexpected error", err);
+      } finally {
+        if (!cancelled) {
+          setHydrated(true);
+        }
+      }
     }
 
     void loadLearningState();
@@ -143,6 +217,14 @@ export function LearningProvider({ children }: { children: ReactNode }) {
           generated_quizzes: generatedQuizSessions,
           generated_flashcards: generatedFlashcardDecks,
         },
+      }).then(() => {
+        // อัปเดต cache หลัง save
+        writeLearningCache({
+          userId: user.id,
+          attempts,
+          generatedQuizSessions,
+          generatedFlashcardDecks,
+        });
       }).catch((error) => {
         console.error("Failed to save learning state", error);
       });
