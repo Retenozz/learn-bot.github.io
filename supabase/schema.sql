@@ -505,8 +505,14 @@ create policy "Joined users can update classrooms"
 on public.classrooms
 for update
 to authenticated
-using (public.is_classroom_member(id, auth.uid()))
-with check (public.is_classroom_member(id, auth.uid()));
+using (
+  public.is_classroom_member(id, auth.uid())
+  or auth.uid() = owner_user_id
+)
+with check (
+  public.is_classroom_member(id, auth.uid())
+  or auth.uid() = owner_user_id
+);
 
 drop policy if exists "Owners can delete classrooms" on public.classrooms;
 create policy "Owners can delete classrooms"
@@ -520,7 +526,10 @@ create policy "Members can read classroom memberships"
 on public.classroom_members
 for select
 to authenticated
-using (public.is_classroom_member(classroom_id, auth.uid()));
+using (
+  public.is_classroom_member(classroom_id, auth.uid())
+  or public.is_classroom_owner(classroom_id, auth.uid())
+);
 
 drop policy if exists "Users can join classrooms as themselves" on public.classroom_members;
 create policy "Users can join classrooms as themselves"
@@ -552,7 +561,13 @@ create policy "Members can read classroom messages"
 on public.classroom_messages
 for select
 to authenticated
-using (public.is_classroom_member(classroom_id, auth.uid()));
+using (
+  public.is_classroom_member(classroom_id, auth.uid())
+  or exists (
+    select 1 from public.classrooms c
+    where c.id = classroom_id and c.owner_user_id = auth.uid()
+  )
+);
 
 drop policy if exists "Members can create classroom messages" on public.classroom_messages;
 create policy "Members can create classroom messages"
@@ -560,7 +575,13 @@ on public.classroom_messages
 for insert
 to authenticated
 with check (
-  public.is_classroom_member(classroom_id, auth.uid())
+  (
+    public.is_classroom_member(classroom_id, auth.uid())
+    or exists (
+      select 1 from public.classrooms c
+      where c.id = classroom_id and c.owner_user_id = auth.uid()
+    )
+  )
   and (sender_user_id is null or sender_user_id = auth.uid())
 );
 

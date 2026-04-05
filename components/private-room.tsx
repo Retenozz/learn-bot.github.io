@@ -33,6 +33,7 @@ import {
   type AssistantReply,
   type ChatAttachment,
   type ChatCitation,
+  type ChatSourceChunk,
 } from "@/lib/chat-documents";
 import { createGeneratedFlashcardDeck } from "@/lib/generated-chat-flashcards";
 import { createGeneratedQuizSession } from "@/lib/generated-chat-quiz";
@@ -67,6 +68,37 @@ const quickActions = [
   "Explain this lesson simply",
 ];
 
+/**
+ * When attachments are round-tripped through Supabase JSONB the `chunks`
+ * array can be missing or empty (size limits / partial serialisation).
+ * This helper rebuilds a minimal single-chunk from the stored `content`
+ * string so that Quiz and Flashcard generation can still find the text.
+ */
+function rebuildAttachmentChunks(att: ChatAttachment): ChatAttachment {
+  if (att.chunks && att.chunks.length > 0) {
+    return att;
+  }
+  if (!att.content) {
+    return att;
+  }
+  const chunk: ChatSourceChunk = {
+    id: `${att.id}-0-0`,
+    attachmentId: att.id,
+    attachmentName: att.name,
+    label: "Excerpt 1",
+    content: att.content.slice(0, 7200),
+    keywords: [],
+  };
+  return { ...att, chunks: [chunk] };
+}
+
+function restoreMessages(raw: Message[]): Message[] {
+  return raw.map((msg) => ({
+    ...msg,
+    attachments: (msg.attachments ?? []).map(rebuildAttachmentChunks),
+  }));
+}
+
 export function PrivateRoom() {
   const router = useRouter();
   const { supabase, user, profile, loading } = useAuth();
@@ -76,6 +108,13 @@ export function PrivateRoom() {
   const [isTyping, setIsTyping] = useState(false);
   const [uploadFeedback, setUploadFeedback] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
+
+  // dirtyCount tracks user-driven changes (send / upload / assistant reply).
+  // The save effect only fires when dirtyCount > 0, preventing the initial
+  // hydration from overwriting Supabase with blank initialMessages before
+  // the load effect has completed.
+  const [dirtyCount, setDirtyCount] = useState(0);
+
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -85,6 +124,7 @@ export function PrivateRoom() {
   );
   const userInitials = getProfileInitials(profile, user);
 
+  // ── Load ────────────────────────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
 
@@ -115,10 +155,17 @@ export function PrivateRoom() {
         console.error("Failed to load private room", error);
       }
 
-      setMessages(
-        data?.messages && data.messages.length ? data.messages : initialMessages,
-      );
+      // Restore saved messages and rebuild any attachment chunks that were
+      // lost during Supabase JSONB serialisation.
+      const saved =
+        data?.messages && data.messages.length
+          ? restoreMessages(data.messages as Message[])
+          : initialMessages;
+
+      setMessages(saved);
       setHydrated(true);
+      // Reset dirty count so the save effect doesn't fire right after loading.
+      setDirtyCount(0);
     }
 
     void loadPrivateRoom();
@@ -128,8 +175,9 @@ export function PrivateRoom() {
     };
   }, [loading, supabase, user]);
 
+  // ── Save (only when the user has actually changed something) ─────────────
   useEffect(() => {
-    if (loading || !user || !hydrated) {
+    if (loading || !user || !hydrated || dirtyCount === 0) {
       return undefined;
     }
 
@@ -144,11 +192,12 @@ export function PrivateRoom() {
       }).catch((error) => {
         console.error("Failed to save private room", error);
       });
-    }, 250);
+    }, 600);
 
     return () => window.clearTimeout(timeout);
-  }, [hydrated, loading, messages, supabase, user]);
+  }, [dirtyCount, hydrated, loading, messages, supabase, user]);
 
+  // ── Scroll to bottom ────────────────────────────────────────────────────
   useEffect(() => {
     const node = scrollAreaRef.current;
 
@@ -159,6 +208,7 @@ export function PrivateRoom() {
     node.scrollTop = node.scrollHeight;
   }, [messages, isTyping]);
 
+  // ── Upload feedback auto-clear ──────────────────────────────────────────
   useEffect(() => {
     if (!uploadFeedback) {
       return undefined;
@@ -168,6 +218,7 @@ export function PrivateRoom() {
     return () => window.clearTimeout(timeout);
   }, [uploadFeedback]);
 
+  // ── Assistant reply ─────────────────────────────────────────────────────
   async function queueAssistantReply(
     prompt: string,
     history: ChatHistoryTurn[],
@@ -209,6 +260,7 @@ export function PrivateRoom() {
           citations: assistantContext.citations,
         },
       ]);
+      setDirtyCount((c) => c + 1);
     } catch (error) {
       console.error("Failed to fetch Gemini reply", error);
       const fallback = buildAssistantReply(prompt, knowledgeFiles);
@@ -225,12 +277,14 @@ export function PrivateRoom() {
               : fallback.citations,
         },
       ]);
+      setDirtyCount((c) => c + 1);
       setUploadFeedback("Gemini is unavailable right now, so Learn'Bot used the local fallback reply.");
     } finally {
       setIsTyping(false);
     }
   }
 
+  // ── Send message ────────────────────────────────────────────────────────
   function handleSend(nextText?: string) {
     const text = (nextText ?? input).trim();
 
@@ -253,10 +307,12 @@ export function PrivateRoom() {
     ];
 
     setMessages(nextMessages);
+    setDirtyCount((c) => c + 1);
     setInput("");
     void queueAssistantReply(text, history, nextMessages);
   }
 
+  // ── File upload ─────────────────────────────────────────────────────────
   async function handleFileSelection(event: ChangeEvent<HTMLInputElement>) {
     const selectedFiles = event.target.files;
 
@@ -283,6 +339,8 @@ export function PrivateRoom() {
 
       const nextMessages = [...messages, userUploadMessage];
       setMessages(nextMessages);
+      setDirtyCount((c) => c + 1);
+
       const reply: AssistantReply = buildUploadAcknowledgement(attachments);
 
       setIsTyping(true);
@@ -296,6 +354,7 @@ export function PrivateRoom() {
             citations: reply.citations,
           },
         ]);
+        setDirtyCount((c) => c + 1);
         setIsTyping(false);
       }, 450);
     }
@@ -303,6 +362,7 @@ export function PrivateRoom() {
     event.target.value = "";
   }
 
+  // ── Quiz / Flashcard generation ─────────────────────────────────────────
   function handleCreateQuizFromChat() {
     const result = createGeneratedQuizSession({
       title: "Quiz from Private Room",
@@ -349,6 +409,7 @@ export function PrivateRoom() {
     router.push(`/flashcards?deck=${result.deck.id}`);
   }
 
+  // ── Loading state ───────────────────────────────────────────────────────
   if ((loading || !hydrated) && user) {
     return (
       <AppShell
@@ -372,6 +433,7 @@ export function PrivateRoom() {
     );
   }
 
+  // ── Render ──────────────────────────────────────────────────────────────
   return (
     <AppShell
       activeHref="/dashboard"

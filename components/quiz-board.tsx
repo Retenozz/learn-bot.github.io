@@ -52,6 +52,11 @@ export function QuizBoard({
     generatedFromQuery ?? "standard",
   ].join("-");
 
+  // Sorted list of all previously generated quiz sessions (newest first)
+  const allGeneratedSessions = Object.values(generatedQuizSessions).sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+  );
+
   if (generatedFromQuery && !hydrated) {
     return (
       <AppShell activeHref="/quiz">
@@ -175,6 +180,49 @@ export function QuizBoard({
           modeFromQuery={modeFromQuery}
           generatedSession={generatedSession}
         />
+
+        {/* ── Generated quiz history ── */}
+        {allGeneratedSessions.length > 0 && (
+          <section className="rounded-[20px] border border-[#d7e2ef] bg-[#f8fbff] p-5">
+            <p className="text-sm font-black uppercase tracking-[0.18em] text-[#6b87ac]">
+              My Generated Quizzes
+            </p>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {allGeneratedSessions.map((session) => {
+                const isActive = session.id === generatedFromQuery;
+                return (
+                  <Link
+                    key={session.id}
+                    href={`/quiz?generated=${session.id}`}
+                    className={`rounded-[16px] border px-4 py-4 transition hover:-translate-y-0.5 ${
+                      isActive
+                        ? "border-[#1b2c77] bg-[#eef6ff]"
+                        : "border-[#d7e2ef] bg-white hover:border-[#9fc5eb]"
+                    }`}
+                  >
+                    <p className="text-xs font-black uppercase tracking-[0.14em] text-[#6b87ac]">
+                      {session.subject} · {session.questions.length} ข้อ
+                    </p>
+                    <p className="mt-2 text-[15px] font-black leading-6 text-[#1b2c77]">
+                      {session.title}
+                    </p>
+                    <p className="mt-1 text-xs font-semibold text-[#4b5e7c]">
+                      {session.sourceTitle}
+                    </p>
+                    <p className="mt-2 text-[11px] text-[#8ba4c2]">
+                      {new Intl.DateTimeFormat("th-TH", {
+                        day: "numeric",
+                        month: "short",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      }).format(new Date(session.createdAt))}
+                    </p>
+                  </Link>
+                );
+              })}
+            </div>
+          </section>
+        )}
       </div>
     </AppShell>
   );
