@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { AppShell } from "@/components/app-shell";
 import { useLearning } from "@/components/learning-provider";
@@ -38,7 +39,8 @@ export function QuizBoard({
   subjectFromQuery,
   generatedFromQuery,
 }: QuizBoardProps) {
-  const { generatedQuizSessions, hydrated } = useLearning();
+  const { generatedQuizSessions, hydrated, deleteGeneratedQuizSession } = useLearning();
+  const router = useRouter();
   const generatedSession = generatedFromQuery
     ? generatedQuizSessions[generatedFromQuery]
     : undefined;
@@ -56,6 +58,16 @@ export function QuizBoard({
   const allGeneratedSessions = Object.values(generatedQuizSessions).sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
   );
+
+  function handleDelete(e: React.MouseEvent, sessionId: string) {
+    e.preventDefault();
+    e.stopPropagation();
+    deleteGeneratedQuizSession(sessionId);
+    // ถ้ากำลังดู session ที่ถูกลบอยู่ ให้กลับไปหน้า quiz หลัก
+    if (generatedFromQuery === sessionId) {
+      router.push("/quiz");
+    }
+  }
 
   if (generatedFromQuery && !hydrated) {
     return (
@@ -191,33 +203,44 @@ export function QuizBoard({
               {allGeneratedSessions.map((session) => {
                 const isActive = session.id === generatedFromQuery;
                 return (
-                  <Link
-                    key={session.id}
-                    href={`/quiz?generated=${session.id}`}
-                    className={`rounded-[16px] border px-4 py-4 transition hover:-translate-y-0.5 ${
-                      isActive
-                        ? "border-[#1b2c77] bg-[#eef6ff]"
-                        : "border-[#d7e2ef] bg-white hover:border-[#9fc5eb]"
-                    }`}
-                  >
-                    <p className="text-xs font-black uppercase tracking-[0.14em] text-[#6b87ac]">
-                      {session.subject} · {session.questions.length} ข้อ
-                    </p>
-                    <p className="mt-2 text-[15px] font-black leading-6 text-[#1b2c77]">
-                      {session.title}
-                    </p>
-                    <p className="mt-1 text-xs font-semibold text-[#4b5e7c]">
-                      {session.sourceTitle}
-                    </p>
-                    <p className="mt-2 text-[11px] text-[#8ba4c2]">
-                      {new Intl.DateTimeFormat("th-TH", {
-                        day: "numeric",
-                        month: "short",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      }).format(new Date(session.createdAt))}
-                    </p>
-                  </Link>
+                  <div key={session.id} className="relative group">
+                    <Link
+                      href={`/quiz?generated=${session.id}`}
+                      className={`block rounded-[16px] border px-4 py-4 transition hover:-translate-y-0.5 ${
+                        isActive
+                          ? "border-[#1b2c77] bg-[#eef6ff]"
+                          : "border-[#d7e2ef] bg-white hover:border-[#9fc5eb]"
+                      }`}
+                    >
+                      <p className="text-xs font-black uppercase tracking-[0.14em] text-[#6b87ac] pr-7">
+                        {session.subject} · {session.questions.length} ข้อ
+                      </p>
+                      <p className="mt-2 text-[15px] font-black leading-6 text-[#1b2c77]">
+                        {session.title}
+                      </p>
+                      <p className="mt-1 text-xs font-semibold text-[#4b5e7c]">
+                        {session.sourceTitle}
+                      </p>
+                      <p className="mt-2 text-[11px] text-[#8ba4c2]">
+                        {new Intl.DateTimeFormat("th-TH", {
+                          day: "numeric",
+                          month: "short",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        }).format(new Date(session.createdAt))}
+                      </p>
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={(e) => handleDelete(e, session.id)}
+                      aria-label="Delete quiz"
+                      className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-full bg-white text-[#c03945] opacity-0 shadow-sm transition group-hover:opacity-100 hover:bg-rose-50"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+                        <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 0 0 6 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 1 0 .23 1.482l.149-.022.841 10.518A2.75 2.75 0 0 0 7.596 19h4.807a2.75 2.75 0 0 0 2.742-2.53l.841-10.52.149.023a.75.75 0 0 0 .23-1.482A41.03 41.03 0 0 0 14 4.193V3.75A2.75 2.75 0 0 0 11.25 1h-2.5ZM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4ZM8.58 7.72a.75.75 0 0 0-1.5.06l.3 7.5a.75.75 0 1 0 1.5-.06l-.3-7.5Zm4.34.06a.75.75 0 1 0-1.5-.06l-.3 7.5a.75.75 0 1 0 1.5.06l.3-7.5Z" clipRule="evenodd" />
+                      </svg>
+                    </button>
+                  </div>
                 );
               })}
             </div>

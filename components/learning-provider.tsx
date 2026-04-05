@@ -41,6 +41,7 @@ type LearningContextValue = {
   clearAttempts: () => void;
   saveGeneratedQuizSession: (session: GeneratedQuizSession) => void;
   saveGeneratedFlashcardDeck: (deck: GeneratedFlashcardDeck) => void;
+  deleteGeneratedQuizSession: (sessionId: string) => void;
 };
 
 type LearningStateRow = {
@@ -284,6 +285,14 @@ export function LearningProvider({ children }: { children: ReactNode }) {
     );
   }
 
+  function deleteGeneratedQuizSession(sessionId: string) {
+    setGeneratedQuizSessions((current) => {
+      const next = { ...current };
+      delete next[sessionId];
+      return next;
+    });
+  }
+
   const value = {
     attempts,
     generatedQuizSessions,
@@ -293,6 +302,7 @@ export function LearningProvider({ children }: { children: ReactNode }) {
     clearAttempts,
     saveGeneratedQuizSession,
     saveGeneratedFlashcardDeck,
+    deleteGeneratedQuizSession,
   };
 
   return (
