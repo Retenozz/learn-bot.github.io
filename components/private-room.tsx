@@ -298,10 +298,10 @@ export function PrivateRoom() {
         const fetchPromise = supabase
           .from("user_private_room_state")
           .select("messages")
-          .maybeSingle();
+          .maybeSingle() as unknown as Promise<{ data: { messages: Message[] | null } | null; error: unknown }>;
 
         const { data: rawData, error } = await withTimeout(
-          fetchPromise as Promise<{ data: { messages: Message[] | null } | null; error: unknown }>,
+          fetchPromise,
           6000,
           { data: null, error: null },
         );
