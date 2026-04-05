@@ -107,6 +107,7 @@ export function PrivateRoom() {
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [uploadFeedback, setUploadFeedback] = useState<string | null>(null);
+  const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false);
   const [hydrated, setHydrated] = useState(false);
 
   // dirtyCount tracks user-driven changes (send / upload / assistant reply).
@@ -376,8 +377,10 @@ export function PrivateRoom() {
   }
 
   // ── Quiz / Flashcard generation ─────────────────────────────────────────
-  function handleCreateQuizFromChat() {
-    const result = createGeneratedQuizSession({
+  async function handleCreateQuizFromChat() {
+    setIsGeneratingQuiz(true);
+    setUploadFeedback("กำลังสร้างควิซจากไฟล์... รอสักครู่นะครับ");
+    const result = await createGeneratedQuizSession({
       title: "Quiz from Private Room",
       sourcePath: "/dashboard",
       sourceTitle: "Private room chat",
@@ -392,10 +395,12 @@ export function PrivateRoom() {
 
     if (!result.ok) {
       setUploadFeedback(result.message);
+      setIsGeneratingQuiz(false);
       return;
     }
 
     saveGeneratedQuizSession(result.session);
+    setIsGeneratingQuiz(false);
     router.push(`/quiz?generated=${result.session.id}`);
   }
 
@@ -593,10 +598,11 @@ export function PrivateRoom() {
               <button
                 type="button"
                 onClick={handleCreateQuizFromChat}
-                className="inline-flex items-center gap-2 rounded-full bg-[#ffe7a8] px-5 py-2 text-sm font-black text-[#7b5b00]"
+                disabled={isGeneratingQuiz}
+                className="inline-flex items-center gap-2 rounded-full bg-[#ffe7a8] px-5 py-2 text-sm font-black text-[#7b5b00] disabled:opacity-60"
               >
                 <QuizIcon className="h-4 w-4" />
-                Quiz from this chat
+                {isGeneratingQuiz ? "กำลังสร้างควิซ..." : "Quiz from this chat"}
               </button>
               <button
                 type="button"
