@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   useEffect,
@@ -36,7 +37,7 @@ import {
   type ChatSourceChunk,
 } from "@/lib/chat-documents";
 import { createGeneratedFlashcardDeck } from "@/lib/generated-chat-flashcards";
-import { createGeneratedQuizSession } from "@/lib/generated-chat-quiz";
+import { createGeneratedQuizSession, type QuizDifficulty } from "@/lib/generated-chat-quiz";
 import {
   isMissingTableError,
   upsertUserState,
@@ -99,6 +100,141 @@ function restoreMessages(raw: Message[]): Message[] {
   }));
 }
 
+// ── Quiz Options Modal ─────────────────────────────────────────────────────
+type QuizOptionsModalProps = {
+  onConfirm: (difficulty: QuizDifficulty, questionCount: number) => void;
+  onCancel: () => void;
+};
+
+const difficultyOptions: { value: QuizDifficulty; label: string; desc: string; color: string; activeColor: string }[] = [
+  {
+    value: "easy",
+    label: "ง่าย",
+    desc: "ถามความรู้พื้นฐาน ตรงๆ จากเนื้อหา",
+    color: "border-[#d7e2ef] bg-white text-[#1b2c77]",
+    activeColor: "border-emerald-400 bg-emerald-50 text-emerald-800",
+  },
+  {
+    value: "medium",
+    label: "กลาง",
+    desc: "ถามความเข้าใจและการประยุกต์ใช้",
+    color: "border-[#d7e2ef] bg-white text-[#1b2c77]",
+    activeColor: "border-[#1b2c77] bg-[#eef6ff] text-[#1b2c77]",
+  },
+  {
+    value: "hard",
+    label: "ยาก",
+    desc: "ถามการวิเคราะห์และสังเคราะห์ความรู้",
+    color: "border-[#d7e2ef] bg-white text-[#1b2c77]",
+    activeColor: "border-rose-400 bg-rose-50 text-rose-800",
+  },
+];
+
+const countOptions: { value: number; label: string; sublabel: string }[] = [
+  { value: 5, label: "น้อย", sublabel: "5 ข้อ" },
+  { value: 10, label: "กลาง", sublabel: "10 ข้อ" },
+  { value: 20, label: "มาก", sublabel: "20 ข้อ" },
+];
+
+function QuizOptionsModal({ onConfirm, onCancel }: QuizOptionsModalProps) {
+  const [difficulty, setDifficulty] = useState<QuizDifficulty>("medium");
+  const [questionCount, setQuestionCount] = useState<number>(10);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      {/* Backdrop */}
+      <div
+        className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+        onClick={onCancel}
+      />
+
+      {/* Modal */}
+      <div className="relative w-full max-w-md rounded-[24px] border border-[#d7e2ef] bg-white p-6 shadow-2xl">
+        {/* Header */}
+        <div className="mb-5">
+          <p className="text-xs font-black uppercase tracking-[0.18em] text-[#6b87ac]">
+            ตั้งค่าควิซ
+          </p>
+          <h2 className="mt-2 text-2xl font-black text-[#1b2c77]">
+            สร้างควิซจากแชทนี้
+          </h2>
+          <p className="mt-1 text-sm leading-6 text-slate-500">
+            เลือกความยากและจำนวนข้อก่อนสร้างควิซ
+          </p>
+        </div>
+
+        {/* Difficulty */}
+        <div className="mb-5">
+          <p className="mb-3 text-sm font-black text-[#1b2c77]">ระดับความยาก</p>
+          <div className="grid grid-cols-3 gap-2">
+            {difficultyOptions.map((opt) => {
+              const isActive = difficulty === opt.value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setDifficulty(opt.value)}
+                  className={`rounded-[14px] border px-3 py-3 text-left transition ${
+                    isActive ? opt.activeColor : opt.color + " hover:bg-[#f4f8ff]"
+                  }`}
+                >
+                  <p className="text-sm font-black">{opt.label}</p>
+                  <p className="mt-1 text-[11px] leading-4 opacity-70">{opt.desc}</p>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Question Count */}
+        <div className="mb-6">
+          <p className="mb-3 text-sm font-black text-[#1b2c77]">จำนวนข้อ</p>
+          <div className="grid grid-cols-3 gap-2">
+            {countOptions.map((opt) => {
+              const isActive = questionCount === opt.value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setQuestionCount(opt.value)}
+                  className={`rounded-[14px] border px-3 py-4 text-center transition ${
+                    isActive
+                      ? "border-[#1b2c77] bg-[#1b2c77] text-white"
+                      : "border-[#d7e2ef] bg-white text-[#1b2c77] hover:bg-[#f4f8ff]"
+                  }`}
+                >
+                  <p className="text-base font-black">{opt.label}</p>
+                  <p className={`mt-0.5 text-xs font-semibold ${isActive ? "text-blue-200" : "text-[#6b87ac]"}`}>
+                    {opt.sublabel}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex gap-3">
+          <button
+            type="button"
+            onClick={() => onConfirm(difficulty, questionCount)}
+            className="flex-1 rounded-full bg-[#1b2c77] py-3 text-sm font-black text-white"
+          >
+            สร้างควิซ {questionCount} ข้อ
+          </button>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-full border border-[#d7e2ef] px-5 py-3 text-sm font-black text-[#6b87ac]"
+          >
+            ยกเลิก
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function PrivateRoom() {
   const router = useRouter();
   const { supabase, user, profile, loading } = useAuth();
@@ -108,6 +244,7 @@ export function PrivateRoom() {
   const [isTyping, setIsTyping] = useState(false);
   const [uploadFeedback, setUploadFeedback] = useState<string | null>(null);
   const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false);
+  const [showQuizOptions, setShowQuizOptions] = useState(false);
   const [hydrated, setHydrated] = useState(false);
 
   // dirtyCount tracks user-driven changes (send / upload / assistant reply).
@@ -376,14 +513,20 @@ export function PrivateRoom() {
     event.target.value = "";
   }
 
-  // ── Quiz / Flashcard generation ─────────────────────────────────────────
-  async function handleCreateQuizFromChat() {
+  // ── Quiz generation (called after modal confirm) ────────────────────────
+  async function handleCreateQuizFromChat(
+    difficulty: QuizDifficulty = "medium",
+    questionCount = 10,
+  ) {
+    setShowQuizOptions(false);
     setIsGeneratingQuiz(true);
     setUploadFeedback("กำลังสร้างควิซจากไฟล์... รอสักครู่นะครับ");
     const result = await createGeneratedQuizSession({
       title: "Quiz from Private Room",
       sourcePath: "/dashboard",
       sourceTitle: "Private room chat",
+      difficulty,
+      questionCount,
       messages: messages.map((message) => ({
         role: message.role === "user" ? "user" : "assistant",
         senderName: message.role === "user" ? "You" : "Learn'Bot",
@@ -453,198 +596,208 @@ export function PrivateRoom() {
 
   // ── Render ──────────────────────────────────────────────────────────────
   return (
-    <AppShell
-      activeHref="/dashboard"
-      lockViewportHeight
-      topBarRight={
-        <button
-          type="button"
-          className="rounded-full bg-[#ffe100] px-4 py-2 text-[15px] font-black text-[#15296f]"
-        >
-          Socratic
-        </button>
-      }
-    >
-      <div className="grid h-full min-h-0 gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="flex h-full min-h-0 flex-col">
-          <div
-            ref={scrollAreaRef}
-            className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-white pr-2 pt-2 overscroll-contain"
+    <>
+      {/* Quiz Options Modal */}
+      {showQuizOptions && (
+        <QuizOptionsModal
+          onConfirm={handleCreateQuizFromChat}
+          onCancel={() => setShowQuizOptions(false)}
+        />
+      )}
+
+      <AppShell
+        activeHref="/dashboard"
+        lockViewportHeight
+        topBarRight={
+          <button
+            type="button"
+            className="rounded-full bg-[#ffe100] px-4 py-2 text-[15px] font-black text-[#15296f]"
           >
-            <div className="space-y-9 pb-4">
-              {messages.map((message) => {
-                const userMessage = message.role === "user";
+            Socratic
+          </button>
+        }
+      >
+        <div className="grid h-full min-h-0 gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="flex h-full min-h-0 flex-col">
+            <div
+              ref={scrollAreaRef}
+              className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-white pr-2 pt-2 overscroll-contain"
+            >
+              <div className="space-y-9 pb-4">
+                {messages.map((message) => {
+                  const userMessage = message.role === "user";
 
-                return (
-                  <div
-                    key={message.id}
-                    className={`flex items-start gap-3 ${
-                      userMessage ? "justify-end" : ""
-                    }`}
-                  >
-                    {!userMessage ? (
-                      <div className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full border-[5px] border-[#1b2c77] bg-white">
-                        <Image
-                          src="/logo.png"
-                          alt="Learn'Bot avatar"
-                          width={28}
-                          height={28}
-                          className="rounded-full"
-                        />
-                      </div>
-                    ) : null}
-
+                  return (
                     <div
-                      className={`max-w-[560px] rounded-[18px] px-6 py-4 text-[17px] font-black leading-7 whitespace-pre-line shadow-sm ${
-                        userMessage
-                          ? "bg-[#99a2ae] text-white"
-                          : "bg-[#1b2c77] text-white"
+                      key={message.id}
+                      className={`flex items-start gap-3 ${
+                        userMessage ? "justify-end" : ""
                       }`}
                     >
-                      {message.text}
-                      <ChatAttachmentPills
-                        attachments={message.attachments ?? []}
-                        tone="dark"
-                      />
-                      <ChatCitations
-                        citations={message.citations ?? []}
-                        tone="dark"
+                      {!userMessage ? (
+                        <div className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full border-[5px] border-[#1b2c77] bg-white">
+                          <Image
+                            src="/logo.png"
+                            alt="Learn'Bot avatar"
+                            width={28}
+                            height={28}
+                            className="rounded-full"
+                          />
+                        </div>
+                      ) : null}
+
+                      <div
+                        className={`max-w-[560px] rounded-[18px] px-6 py-4 text-[17px] font-black leading-7 whitespace-pre-line shadow-sm ${
+                          userMessage
+                            ? "bg-[#99a2ae] text-white"
+                            : "bg-[#1b2c77] text-white"
+                        }`}
+                      >
+                        {message.text}
+                        <ChatAttachmentPills
+                          attachments={message.attachments ?? []}
+                          tone="dark"
+                        />
+                        <ChatCitations
+                          citations={message.citations ?? []}
+                          tone="dark"
+                        />
+                      </div>
+
+                      {userMessage ? (
+                        <div className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full border-[4px] border-[#d8c4ff] bg-[radial-gradient(circle_at_35%_35%,#704cff_0%,#311760_70%)] text-base font-black text-white">
+                          {userInitials}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+
+                {isTyping ? (
+                  <div className="flex items-end gap-3">
+                    <div className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full border-[5px] border-[#1b2c77] bg-white">
+                      <Image
+                        src="/logo.png"
+                        alt="Learn'Bot avatar"
+                        width={28}
+                        height={28}
+                        className="rounded-full"
                       />
                     </div>
+                    <div className="flex items-center gap-2">
+                      {[0, 1, 2].map((dot) => (
+                        <span
+                          key={dot}
+                          className={`h-3 w-3 rounded-full ${
+                            dot === 1 ? "bg-[#1b2c77]" : "bg-[#cfe1ff]"
+                          }`}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            </div>
 
-                    {userMessage ? (
-                      <div className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full border-[4px] border-[#d8c4ff] bg-[radial-gradient(circle_at_35%_35%,#704cff_0%,#311760_70%)] text-base font-black text-white">
-                        {userInitials}
-                      </div>
-                    ) : null}
-                  </div>
-                );
-              })}
-
-              {isTyping ? (
-                <div className="flex items-end gap-3">
-                  <div className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full border-[5px] border-[#1b2c77] bg-white">
-                    <Image
-                      src="/logo.png"
-                      alt="Learn'Bot avatar"
-                      width={28}
-                      height={28}
-                      className="rounded-full"
-                    />
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {[0, 1, 2].map((dot) => (
-                      <span
-                        key={dot}
-                        className={`h-3 w-3 rounded-full ${
-                          dot === 1 ? "bg-[#1b2c77]" : "bg-[#cfe1ff]"
-                        }`}
-                      />
-                    ))}
-                  </div>
+            <div className="mt-4 bg-[#416f9d] px-2 pb-2 pt-2">
+              {knowledgeFiles.length ? (
+                <div className="mb-3 rounded-[14px] bg-[#c8e1fb] px-3 py-3 text-[#173567]">
+                  <p className="text-xs font-black tracking-[0.16em]">AI KNOWLEDGE</p>
+                  <ChatAttachmentPills attachments={knowledgeFiles.slice(-4)} />
                 </div>
+              ) : null}
+
+              <div className="flex items-center gap-2 border border-[#6d93bb] bg-[#c8e1fb] px-2 py-2">
+                <input
+                  value={input}
+                  onChange={(event) => setInput(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      handleSend();
+                    }
+                  }}
+                  className="h-10 flex-1 bg-transparent px-2 text-sm text-[#29496f] outline-none placeholder:text-[#6d89a8]"
+                  placeholder="Ask Learn'Bot about your uploaded files"
+                />
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept={chatFileAccept}
+                  multiple
+                  onChange={handleFileSelection}
+                  className="hidden"
+                />
+                <button
+                  type="button"
+                  aria-label="Attach file"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex h-11 w-11 items-center justify-center rounded-[12px] bg-[#9fc5eb] text-[#173567]"
+                >
+                  <PaperclipIcon className="h-5 w-5" />
+                </button>
+                <button
+                  type="button"
+                  aria-label="Send message"
+                  onClick={() => handleSend()}
+                  className="flex h-11 w-11 items-center justify-center rounded-[12px] bg-white text-[#173567]"
+                >
+                  <SendIcon className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowQuizOptions(true)}
+                  disabled={isGeneratingQuiz}
+                  className="inline-flex items-center gap-2 rounded-full bg-[#ffe7a8] px-5 py-2 text-sm font-black text-[#7b5b00] disabled:opacity-60"
+                >
+                  <QuizIcon className="h-4 w-4" />
+                  {isGeneratingQuiz ? "กำลังสร้างควิซ..." : "Quiz from this chat"}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCreateFlashcardsFromChat}
+                  className="inline-flex items-center gap-2 rounded-full bg-[#dcecff] px-5 py-2 text-sm font-black text-[#173567]"
+                >
+                  <CardsIcon className="h-4 w-4" />
+                  Flashcards from chat
+                </button>
+
+                {quickActions.map((action) => (
+                  <button
+                    key={action}
+                    type="button"
+                    onClick={() => setInput(action)}
+                    className="rounded-full bg-[#a5c9ec] px-5 py-2 text-sm font-black text-[#12296f]"
+                  >
+                    {action}
+                  </button>
+                ))}
+
+                <span className="text-xs font-semibold text-white/88">
+                  Supports PDF, DOCX, PNG, JPG, TXT, MD, CSV, JSON, and source code notes.
+                </span>
+              </div>
+
+              {uploadFeedback ? (
+                <p className="mt-3 text-xs font-semibold text-[#fff3b0]">
+                  {uploadFeedback}
+                </p>
               ) : null}
             </div>
           </div>
 
-          <div className="mt-4 bg-[#416f9d] px-2 pb-2 pt-2">
-            {knowledgeFiles.length ? (
-              <div className="mb-3 rounded-[14px] bg-[#c8e1fb] px-3 py-3 text-[#173567]">
-                <p className="text-xs font-black tracking-[0.16em]">AI KNOWLEDGE</p>
-                <ChatAttachmentPills attachments={knowledgeFiles.slice(-4)} />
-              </div>
-            ) : null}
-
-            <div className="flex items-center gap-2 border border-[#6d93bb] bg-[#c8e1fb] px-2 py-2">
-              <input
-                value={input}
-                onChange={(event) => setInput(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    handleSend();
-                  }
-                }}
-                className="h-10 flex-1 bg-transparent px-2 text-sm text-[#29496f] outline-none placeholder:text-[#6d89a8]"
-                placeholder="Ask Learn'Bot about your uploaded files"
-              />
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept={chatFileAccept}
-                multiple
-                onChange={handleFileSelection}
-                className="hidden"
-              />
-              <button
-                type="button"
-                aria-label="Attach file"
-                onClick={() => fileInputRef.current?.click()}
-                className="flex h-11 w-11 items-center justify-center rounded-[12px] bg-[#9fc5eb] text-[#173567]"
-              >
-                <PaperclipIcon className="h-5 w-5" />
-              </button>
-              <button
-                type="button"
-                aria-label="Send message"
-                onClick={() => handleSend()}
-                className="flex h-11 w-11 items-center justify-center rounded-[12px] bg-white text-[#173567]"
-              >
-                <SendIcon className="h-5 w-5" />
-              </button>
-            </div>
-
-            <div className="mt-3 flex flex-wrap items-center gap-3">
-              <button
-                type="button"
-                onClick={handleCreateQuizFromChat}
-                disabled={isGeneratingQuiz}
-                className="inline-flex items-center gap-2 rounded-full bg-[#ffe7a8] px-5 py-2 text-sm font-black text-[#7b5b00] disabled:opacity-60"
-              >
-                <QuizIcon className="h-4 w-4" />
-                {isGeneratingQuiz ? "กำลังสร้างควิซ..." : "Quiz from this chat"}
-              </button>
-              <button
-                type="button"
-                onClick={handleCreateFlashcardsFromChat}
-                className="inline-flex items-center gap-2 rounded-full bg-[#dcecff] px-5 py-2 text-sm font-black text-[#173567]"
-              >
-                <CardsIcon className="h-4 w-4" />
-                Flashcards from chat
-              </button>
-
-              {quickActions.map((action) => (
-                <button
-                  key={action}
-                  type="button"
-                  onClick={() => setInput(action)}
-                  className="rounded-full bg-[#a5c9ec] px-5 py-2 text-sm font-black text-[#12296f]"
-                >
-                  {action}
-                </button>
-              ))}
-
-              <span className="text-xs font-semibold text-white/88">
-                Supports PDF, DOCX, PNG, JPG, TXT, MD, CSV, JSON, and source code notes.
-              </span>
-            </div>
-
-            {uploadFeedback ? (
-              <p className="mt-3 text-xs font-semibold text-[#fff3b0]">
-                {uploadFeedback}
-              </p>
-            ) : null}
-          </div>
+          <aside className="hidden min-h-0 overflow-y-auto xl:block">
+            <StudyRoadmapPanel
+              variant="aside"
+              onCreateQuizFromChat={() => setShowQuizOptions(true)}
+              onCreateFlashcardsFromChat={handleCreateFlashcardsFromChat}
+            />
+          </aside>
         </div>
-
-        <aside className="hidden min-h-0 overflow-y-auto xl:block">
-          <StudyRoadmapPanel
-            variant="aside"
-            onCreateQuizFromChat={handleCreateQuizFromChat}
-            onCreateFlashcardsFromChat={handleCreateFlashcardsFromChat}
-          />
-        </aside>
-      </div>
-    </AppShell>
+      </AppShell>
+    </>
   );
 }

@@ -40,7 +40,7 @@ import {
   type AssistantReply,
 } from "@/lib/chat-documents";
 import { createGeneratedFlashcardDeck } from "@/lib/generated-chat-flashcards";
-import { createGeneratedQuizSession } from "@/lib/generated-chat-quiz";
+import { createGeneratedQuizSession, type QuizDifficulty } from "@/lib/generated-chat-quiz";
 
 type ClassroomChatRoomProps = {
   classroomId: string;
@@ -51,6 +51,147 @@ function formatMessageTime(value: string) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(value));
+}
+
+// ── Quiz Options Modal ─────────────────────────────────────────────────────
+type QuizOptionsModalProps = {
+  onConfirm: (difficulty: QuizDifficulty, questionCount: number) => void;
+  onCancel: () => void;
+};
+
+const difficultyOptions: {
+  value: QuizDifficulty;
+  label: string;
+  desc: string;
+  color: string;
+  activeColor: string;
+}[] = [
+  {
+    value: "easy",
+    label: "ง่าย",
+    desc: "ถามความรู้พื้นฐาน ตรงๆ จากเนื้อหา",
+    color: "border-[#d7e2ef] bg-white text-[#1b2c77]",
+    activeColor: "border-emerald-400 bg-emerald-50 text-emerald-800",
+  },
+  {
+    value: "medium",
+    label: "กลาง",
+    desc: "ถามความเข้าใจและการประยุกต์ใช้",
+    color: "border-[#d7e2ef] bg-white text-[#1b2c77]",
+    activeColor: "border-[#1b2c77] bg-[#eef6ff] text-[#1b2c77]",
+  },
+  {
+    value: "hard",
+    label: "ยาก",
+    desc: "ถามการวิเคราะห์และสังเคราะห์ความรู้",
+    color: "border-[#d7e2ef] bg-white text-[#1b2c77]",
+    activeColor: "border-rose-400 bg-rose-50 text-rose-800",
+  },
+];
+
+const countOptions: { value: number; label: string; sublabel: string }[] = [
+  { value: 5, label: "น้อย", sublabel: "5 ข้อ" },
+  { value: 10, label: "กลาง", sublabel: "10 ข้อ" },
+  { value: 20, label: "มาก", sublabel: "20 ข้อ" },
+];
+
+function QuizOptionsModal({ onConfirm, onCancel }: QuizOptionsModalProps) {
+  const [difficulty, setDifficulty] = useState<QuizDifficulty>("medium");
+  const [questionCount, setQuestionCount] = useState<number>(10);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      {/* Backdrop */}
+      <div
+        className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+        onClick={onCancel}
+      />
+
+      {/* Modal */}
+      <div className="relative w-full max-w-md rounded-[24px] border border-[#d7e2ef] bg-white p-6 shadow-2xl">
+        {/* Header */}
+        <div className="mb-5">
+          <p className="text-xs font-black uppercase tracking-[0.18em] text-[#6b87ac]">
+            ตั้งค่าควิซ
+          </p>
+          <h2 className="mt-2 text-2xl font-black text-[#1b2c77]">
+            สร้างควิซจากห้องนี้
+          </h2>
+          <p className="mt-1 text-sm leading-6 text-slate-500">
+            เลือกความยากและจำนวนข้อก่อนสร้างควิซ
+          </p>
+        </div>
+
+        {/* Difficulty */}
+        <div className="mb-5">
+          <p className="mb-3 text-sm font-black text-[#1b2c77]">ระดับความยาก</p>
+          <div className="grid grid-cols-3 gap-2">
+            {difficultyOptions.map((opt) => {
+              const isActive = difficulty === opt.value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setDifficulty(opt.value)}
+                  className={`rounded-[14px] border px-3 py-3 text-left transition ${
+                    isActive ? opt.activeColor : opt.color + " hover:bg-[#f4f8ff]"
+                  }`}
+                >
+                  <p className="text-sm font-black">{opt.label}</p>
+                  <p className="mt-1 text-[11px] leading-4 opacity-70">{opt.desc}</p>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Question Count */}
+        <div className="mb-6">
+          <p className="mb-3 text-sm font-black text-[#1b2c77]">จำนวนข้อ</p>
+          <div className="grid grid-cols-3 gap-2">
+            {countOptions.map((opt) => {
+              const isActive = questionCount === opt.value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setQuestionCount(opt.value)}
+                  className={`rounded-[14px] border px-3 py-4 text-center transition ${
+                    isActive
+                      ? "border-[#1b2c77] bg-[#1b2c77] text-white"
+                      : "border-[#d7e2ef] bg-white text-[#1b2c77] hover:bg-[#f4f8ff]"
+                  }`}
+                >
+                  <p className="text-base font-black">{opt.label}</p>
+                  <p className={`mt-0.5 text-xs font-semibold ${isActive ? "text-blue-200" : "text-[#6b87ac]"}`}>
+                    {opt.sublabel}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex gap-3">
+          <button
+            type="button"
+            onClick={() => onConfirm(difficulty, questionCount)}
+            className="flex-1 rounded-full bg-[#1b2c77] py-3 text-sm font-black text-white"
+          >
+            สร้างควิซ {questionCount} ข้อ
+          </button>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-full border border-[#d7e2ef] px-5 py-3 text-sm font-black text-[#6b87ac]"
+          >
+            ยกเลิก
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export function ClassroomChatRoom({ classroomId }: ClassroomChatRoomProps) {
@@ -67,6 +208,8 @@ export function ClassroomChatRoom({ classroomId }: ClassroomChatRoomProps) {
   const [copied, setCopied] = useState(false);
   const [sharedLink, setSharedLink] = useState(false);
   const [uploadFeedback, setUploadFeedback] = useState<string | null>(null);
+  const [showQuizOptions, setShowQuizOptions] = useState(false);
+  const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false);
   const endRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -265,17 +408,24 @@ export function ClassroomChatRoom({ classroomId }: ClassroomChatRoomProps) {
     event.target.value = "";
   }
 
-  async function handleCreateQuizFromChat() {
+  async function handleCreateQuizFromChat(
+    difficulty: QuizDifficulty = "medium",
+    questionCount = 10,
+  ) {
     if (!classroom) {
       return;
     }
 
+    setShowQuizOptions(false);
+    setIsGeneratingQuiz(true);
     setUploadFeedback("กำลังสร้างควิซจากไฟล์... รอสักครู่นะครับ");
 
     const result = await createGeneratedQuizSession({
       title: `Quiz from ${classroom.name}`,
       sourcePath: `/classroom/${encodeURIComponent(classroom.id)}`,
       sourceTitle: classroom.name,
+      difficulty,
+      questionCount,
       messages: classroom.messages.map((message) => ({
         role: message.senderRole,
         senderName: message.senderName,
@@ -287,10 +437,12 @@ export function ClassroomChatRoom({ classroomId }: ClassroomChatRoomProps) {
 
     if (!result.ok) {
       setUploadFeedback(result.message);
+      setIsGeneratingQuiz(false);
       return;
     }
 
     saveGeneratedQuizSession(result.session);
+    setIsGeneratingQuiz(false);
     router.push(`/quiz?generated=${result.session.id}`);
   }
 
@@ -359,284 +511,296 @@ export function ClassroomChatRoom({ classroomId }: ClassroomChatRoomProps) {
   }
 
   return (
-    <AppShell
-      activeHref="/classroom"
-      lockViewportHeight
-      topBarRight={
-        <span className="rounded-full bg-[#ffde43] px-4 py-2 text-[11px] font-black tracking-[0.28em] text-[#15296f]">
-          {classroom.code}
-        </span>
-      }
-    >
-      <div className="grid h-full min-h-0 gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
-        <section className="grid h-full min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-[24px] border border-[#d8e5f2] bg-[#f8fbff]">
-          <div className="border-b border-[#d8e5f2] px-5 py-4">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div className="flex items-center gap-4">
-                <ClassroomIconBadge icon={classroom.icon} />
-                <div>
-                  <p className="text-[13px] font-black tracking-[0.28em] text-[#5b7aa4]">
-                    GROUP CHAT
-                  </p>
-                  <h1 className="mt-2 text-[30px] font-black text-[#18317a]">
-                    {classroom.name}
-                  </h1>
-                  <p className="mt-1 text-sm leading-6 text-[#49658c]">
-                    {"Upload materials into this room, then ask Learn'Bot to summarize, explain, or quiz the group from those files."}
-                  </p>
+    <>
+      {/* Quiz Options Modal */}
+      {showQuizOptions && (
+        <QuizOptionsModal
+          onConfirm={handleCreateQuizFromChat}
+          onCancel={() => setShowQuizOptions(false)}
+        />
+      )}
+
+      <AppShell
+        activeHref="/classroom"
+        lockViewportHeight
+        topBarRight={
+          <span className="rounded-full bg-[#ffde43] px-4 py-2 text-[11px] font-black tracking-[0.28em] text-[#15296f]">
+            {classroom.code}
+          </span>
+        }
+      >
+        <div className="grid h-full min-h-0 gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
+          <section className="grid h-full min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-[24px] border border-[#d8e5f2] bg-[#f8fbff]">
+            <div className="border-b border-[#d8e5f2] px-5 py-4">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <ClassroomIconBadge icon={classroom.icon} />
+                  <div>
+                    <p className="text-[13px] font-black tracking-[0.28em] text-[#5b7aa4]">
+                      GROUP CHAT
+                    </p>
+                    <h1 className="mt-2 text-[30px] font-black text-[#18317a]">
+                      {classroom.name}
+                    </h1>
+                    <p className="mt-1 text-sm leading-6 text-[#49658c]">
+                      {"Upload materials into this room, then ask Learn'Bot to summarize, explain, or quiz the group from those files."}
+                    </p>
+                  </div>
                 </div>
+
+                <Link
+                  href="/classroom"
+                  className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-black text-[#1b2c77] shadow-sm"
+                >
+                  View all rooms
+                  <ArrowRightIcon className="h-4 w-4" />
+                </Link>
               </div>
-
-              <Link
-                href="/classroom"
-                className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-black text-[#1b2c77] shadow-sm"
-              >
-                View all rooms
-                <ArrowRightIcon className="h-4 w-4" />
-              </Link>
             </div>
-          </div>
 
-          <div className="min-h-0 overflow-y-auto px-5 py-5 xl:px-6">
-            <div className="flex min-h-full flex-col gap-4">
-              {classroom.messages.map((message) => {
-                const isMe = message.senderRole === "me";
-                const isSystem = message.senderRole === "system";
-                const isAssistant = message.senderRole === "assistant";
-                const headerName = isMe ? "You" : message.senderName;
+            <div className="min-h-0 overflow-y-auto px-5 py-5 xl:px-6">
+              <div className="flex min-h-full flex-col gap-4">
+                {classroom.messages.map((message) => {
+                  const isMe = message.senderRole === "me";
+                  const isSystem = message.senderRole === "system";
+                  const isAssistant = message.senderRole === "assistant";
+                  const headerName = isMe ? "You" : message.senderName;
 
-                return (
-                  <div
-                    key={message.id}
-                    className={`flex ${isMe ? "justify-end" : "justify-start"}`}
-                  >
+                  return (
                     <div
-                      className={`max-w-[72%] rounded-[24px] px-4 py-3 whitespace-pre-line break-words shadow-sm xl:max-w-[78%] ${
-                        isSystem
-                          ? "bg-[#eef5ff] text-[#355683]"
-                          : isAssistant
-                            ? "bg-[#1b2c77] text-white"
-                            : isMe
-                              ? "bg-[#99a2ae] text-white"
-                              : "bg-white text-[#18317a]"
-                      }`}
+                      key={message.id}
+                      className={`flex ${isMe ? "justify-end" : "justify-start"}`}
                     >
-                      <div className="flex flex-wrap items-center gap-2 text-[12px] font-black tracking-[0.08em] opacity-80">
-                        <span>{headerName}</span>
-                        <span>|</span>
-                        <span>{formatMessageTime(message.createdAt)}</span>
+                      <div
+                        className={`max-w-[72%] rounded-[24px] px-4 py-3 whitespace-pre-line break-words shadow-sm xl:max-w-[78%] ${
+                          isSystem
+                            ? "bg-[#eef5ff] text-[#355683]"
+                            : isAssistant
+                              ? "bg-[#1b2c77] text-white"
+                              : isMe
+                                ? "bg-[#99a2ae] text-white"
+                                : "bg-white text-[#18317a]"
+                        }`}
+                      >
+                        <div className="flex flex-wrap items-center gap-2 text-[12px] font-black tracking-[0.08em] opacity-80">
+                          <span>{headerName}</span>
+                          <span>|</span>
+                          <span>{formatMessageTime(message.createdAt)}</span>
+                        </div>
+                        <p className="mt-2 text-[15px] leading-7 break-words">
+                          {message.text}
+                        </p>
+                        <ChatAttachmentPills
+                          attachments={message.attachments ?? []}
+                          tone={isMe || isAssistant ? "dark" : "light"}
+                        />
+                        <ChatCitations
+                          citations={message.citations ?? []}
+                          tone={isMe || isAssistant ? "dark" : "light"}
+                        />
                       </div>
-                      <p className="mt-2 text-[15px] leading-7 break-words">
-                        {message.text}
+                    </div>
+                  );
+                })}
+                <div ref={endRef} />
+              </div>
+            </div>
+
+            <div className="shrink-0 border-t border-[#d8e5f2] bg-white px-5 py-4">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept={chatFileAccept}
+                multiple
+                onChange={handleFileSelection}
+                className="hidden"
+              />
+
+              {knowledgeFiles.length ? (
+                <div className="mb-3 rounded-[18px] bg-[#f7fbff] px-4 py-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-black tracking-[0.16em] text-[#5b7aa4]">
+                        AI KNOWLEDGE IN THIS ROOM
                       </p>
-                      <ChatAttachmentPills
-                        attachments={message.attachments ?? []}
-                        tone={isMe || isAssistant ? "dark" : "light"}
-                      />
-                      <ChatCitations
-                        citations={message.citations ?? []}
-                        tone={isMe || isAssistant ? "dark" : "light"}
-                      />
+                      <ChatAttachmentPills attachments={knowledgeFiles.slice(-4)} />
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowQuizOptions(true)}
+                        disabled={isGeneratingQuiz}
+                        className="inline-flex items-center gap-2 rounded-full bg-[#ffe7a8] px-4 py-2 text-sm font-black text-[#7b5b00] disabled:opacity-60"
+                      >
+                        <QuizIcon className="h-4 w-4" />
+                        {isGeneratingQuiz ? "กำลังสร้างควิซ..." : "Quiz from chat"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleCreateFlashcardsFromChat}
+                        className="inline-flex items-center gap-2 rounded-full bg-[#dcecff] px-4 py-2 text-sm font-black text-[#173567]"
+                      >
+                        <CardsIcon className="h-4 w-4" />
+                        Flashcards
+                      </button>
                     </div>
                   </div>
-                );
-              })}
-              <div ref={endRef} />
-            </div>
-          </div>
-
-          <div className="shrink-0 border-t border-[#d8e5f2] bg-white px-5 py-4">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept={chatFileAccept}
-              multiple
-              onChange={handleFileSelection}
-              className="hidden"
-            />
-
-            {knowledgeFiles.length ? (
-              <div className="mb-3 rounded-[18px] bg-[#f7fbff] px-4 py-3">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-black tracking-[0.16em] text-[#5b7aa4]">
-                      AI KNOWLEDGE IN THIS ROOM
-                    </p>
-                    <ChatAttachmentPills attachments={knowledgeFiles.slice(-4)} />
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={handleCreateQuizFromChat}
-                      className="inline-flex items-center gap-2 rounded-full bg-[#ffe7a8] px-4 py-2 text-sm font-black text-[#7b5b00]"
-                    >
-                      <QuizIcon className="h-4 w-4" />
-                      Quiz from chat
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleCreateFlashcardsFromChat}
-                      className="inline-flex items-center gap-2 rounded-full bg-[#dcecff] px-4 py-2 text-sm font-black text-[#173567]"
-                    >
-                      <CardsIcon className="h-4 w-4" />
-                      Flashcards
-                    </button>
-                  </div>
                 </div>
-              </div>
-            ) : (
-              <div className="mb-3 flex flex-wrap justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={handleCreateQuizFromChat}
-                  className="inline-flex items-center gap-2 rounded-full bg-[#ffe7a8] px-4 py-2 text-sm font-black text-[#7b5b00]"
-                >
-                  <QuizIcon className="h-4 w-4" />
-                  Quiz from chat
-                </button>
-                <button
-                  type="button"
-                  onClick={handleCreateFlashcardsFromChat}
-                  className="inline-flex items-center gap-2 rounded-full bg-[#dcecff] px-4 py-2 text-sm font-black text-[#173567]"
-                >
-                  <CardsIcon className="h-4 w-4" />
-                  Flashcards
-                </button>
-              </div>
-            )}
-
-            <form
-              onSubmit={handleSend}
-              className="grid grid-cols-[minmax(0,1fr)_56px_56px] gap-3"
-            >
-              <input
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-                placeholder="Talk to the group or ask Learn'Bot about uploaded files"
-                className="h-14 min-w-0 rounded-[18px] border border-[#c8d9ed] bg-[#f7fbff] px-4 text-[15px] text-[#18317a] outline-none focus:border-[#1b2c77]"
-              />
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="flex h-14 w-14 items-center justify-center rounded-[18px] bg-[#cfe1ff] text-[#1b2c77]"
-                aria-label="Attach study files"
-              >
-                <PaperclipIcon className="h-5 w-5" />
-              </button>
-              <button
-                type="submit"
-                disabled={!draft.trim()}
-                className="flex h-14 w-14 items-center justify-center rounded-[18px] bg-[#1b2c77] text-white shadow-[0_12px_24px_rgba(27,44,119,0.18)] disabled:bg-[#a5b6d9]"
-                aria-label="Send message"
-              >
-                <SendIcon className="h-5 w-5" />
-              </button>
-            </form>
-
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-              <p className="text-xs font-semibold text-[#5b7aa4]">
-                Supports PDF, DOCX, PNG, JPG, TXT, MD, CSV, JSON, and source code notes.
-              </p>
-              {uploadFeedback ? (
-                <p className="text-xs font-semibold text-[#b45309]">
-                  {uploadFeedback}
-                </p>
-              ) : null}
-            </div>
-          </div>
-        </section>
-
-        <aside className="flex h-full min-h-0 min-w-0 flex-col gap-4 overflow-y-auto rounded-[24px] bg-[#eef5ff] p-5">
-          <div className="rounded-[22px] bg-white p-4 shadow-sm">
-            <p className="text-[13px] font-black tracking-[0.28em] text-[#5b7aa4]">
-              ROOM CODE
-            </p>
-            <div className="mt-3 flex items-center justify-between gap-3 rounded-[18px] bg-[#f7fbff] px-4 py-3">
-              <span className="text-[20px] font-black text-[#18317a]">
-                {classroom.code}
-              </span>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleCopyCode}
-                  className="flex h-11 w-11 items-center justify-center rounded-[14px] bg-[#eef5ff] text-[#1b2c77]"
-                  aria-label="Copy room code"
-                >
-                  <CopyIcon className="h-5 w-5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={handleShareRoomLink}
-                  className="flex h-11 w-11 items-center justify-center rounded-[14px] bg-[#eef5ff] text-[#1b2c77]"
-                  aria-label="Share room invite link"
-                >
-                  <ShareIcon className="h-5 w-5" />
-                </button>
-              </div>
-            </div>
-            <p className="mt-3 text-sm leading-6 text-[#49658c]">
-              {copied
-                ? "Room code copied"
-                : sharedLink
-                  ? "Invite link copied"
-                  : "Copy the code or share an invite link for this room."}
-            </p>
-            <button
-              type="button"
-              onClick={handleDeleteClassroom}
-              className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-[16px] bg-[#fff1f3] px-4 py-3 text-sm font-black text-[#c03945]"
-            >
-              <TrashIcon className="h-4 w-4" />
-              {classroom.isOwner ? "Delete room" : "Leave room"}
-            </button>
-          </div>
-
-          <div className="rounded-[22px] bg-white p-4 shadow-sm">
-            <div className="flex items-center gap-2 text-[#18317a]">
-              <UsersIcon className="h-5 w-5" />
-              <p className="text-[13px] font-black tracking-[0.28em]">MEMBERS</p>
-            </div>
-            <div className="mt-4 flex flex-wrap gap-3">
-              {classroom.members.map((member) => (
-                <span
-                  key={member}
-                  className="rounded-full bg-[#eef5ff] px-3 py-2 text-sm font-black text-[#18317a]"
-                >
-                  {member}
-                </span>
-              ))}
-            </div>
-          </div>
-
-          <div className="rounded-[22px] bg-white p-4 shadow-sm">
-            <div className="flex items-center gap-2 text-[#18317a]">
-              <BookIcon className="h-5 w-5" />
-              <p className="text-[13px] font-black tracking-[0.28em]">MATERIALS</p>
-            </div>
-
-            <div className="mt-4 space-y-3">
-              {classroom.materials.length ? (
-                classroom.materials.map((material) => (
-                  <div
-                    key={material}
-                    className="rounded-[18px] bg-[#f7fbff] px-4 py-3 text-sm font-semibold leading-6 break-words text-[#355683]"
-                  >
-                    {material}
-                  </div>
-                ))
               ) : (
-                <div className="rounded-[18px] bg-[#f7fbff] px-4 py-3 text-sm leading-6 text-[#49658c]">
-                  {"No materials yet. Upload a study file into the chat to let Learn'Bot read it."}
+                <div className="mb-3 flex flex-wrap justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowQuizOptions(true)}
+                    disabled={isGeneratingQuiz}
+                    className="inline-flex items-center gap-2 rounded-full bg-[#ffe7a8] px-4 py-2 text-sm font-black text-[#7b5b00] disabled:opacity-60"
+                  >
+                    <QuizIcon className="h-4 w-4" />
+                    {isGeneratingQuiz ? "กำลังสร้างควิซ..." : "Quiz from chat"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCreateFlashcardsFromChat}
+                    className="inline-flex items-center gap-2 rounded-full bg-[#dcecff] px-4 py-2 text-sm font-black text-[#173567]"
+                  >
+                    <CardsIcon className="h-4 w-4" />
+                    Flashcards
+                  </button>
                 </div>
               )}
-            </div>
-          </div>
 
-          <div className="mt-auto rounded-[22px] bg-white px-4 py-4 text-sm leading-7 text-[#49658c] shadow-sm">
-            {'Ask Learn\'Bot with prompts like "summarize the uploaded files", "explain this lesson", or "make a quiz from these notes".'}
-          </div>
-        </aside>
-      </div>
-    </AppShell>
+              <form
+                onSubmit={handleSend}
+                className="grid grid-cols-[minmax(0,1fr)_56px_56px] gap-3"
+              >
+                <input
+                  value={draft}
+                  onChange={(event) => setDraft(event.target.value)}
+                  placeholder="Talk to the group or ask Learn'Bot about uploaded files"
+                  className="h-14 min-w-0 rounded-[18px] border border-[#c8d9ed] bg-[#f7fbff] px-4 text-[15px] text-[#18317a] outline-none focus:border-[#1b2c77]"
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex h-14 w-14 items-center justify-center rounded-[18px] bg-[#cfe1ff] text-[#1b2c77]"
+                  aria-label="Attach study files"
+                >
+                  <PaperclipIcon className="h-5 w-5" />
+                </button>
+                <button
+                  type="submit"
+                  disabled={!draft.trim()}
+                  className="flex h-14 w-14 items-center justify-center rounded-[18px] bg-[#1b2c77] text-white shadow-[0_12px_24px_rgba(27,44,119,0.18)] disabled:bg-[#a5b6d9]"
+                  aria-label="Send message"
+                >
+                  <SendIcon className="h-5 w-5" />
+                </button>
+              </form>
+
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                <p className="text-xs font-semibold text-[#5b7aa4]">
+                  Supports PDF, DOCX, PNG, JPG, TXT, MD, CSV, JSON, and source code notes.
+                </p>
+                {uploadFeedback ? (
+                  <p className="text-xs font-semibold text-[#b45309]">
+                    {uploadFeedback}
+                  </p>
+                ) : null}
+              </div>
+            </div>
+          </section>
+
+          <aside className="flex h-full min-h-0 min-w-0 flex-col gap-4 overflow-y-auto rounded-[24px] bg-[#eef5ff] p-5">
+            <div className="rounded-[22px] bg-white p-4 shadow-sm">
+              <p className="text-[13px] font-black tracking-[0.28em] text-[#5b7aa4]">
+                ROOM CODE
+              </p>
+              <div className="mt-3 flex items-center justify-between gap-3 rounded-[18px] bg-[#f7fbff] px-4 py-3">
+                <span className="text-[20px] font-black text-[#18317a]">
+                  {classroom.code}
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleCopyCode}
+                    className="flex h-11 w-11 items-center justify-center rounded-[14px] bg-[#eef5ff] text-[#1b2c77]"
+                    aria-label="Copy room code"
+                  >
+                    <CopyIcon className="h-5 w-5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleShareRoomLink}
+                    className="flex h-11 w-11 items-center justify-center rounded-[14px] bg-[#eef5ff] text-[#1b2c77]"
+                    aria-label="Share room invite link"
+                  >
+                    <ShareIcon className="h-5 w-5" />
+                  </button>
+                </div>
+              </div>
+              <p className="mt-3 text-sm leading-6 text-[#49658c]">
+                {copied
+                  ? "Room code copied"
+                  : sharedLink
+                    ? "Invite link copied"
+                    : "Copy the code or share an invite link for this room."}
+              </p>
+              <button
+                type="button"
+                onClick={handleDeleteClassroom}
+                className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-[16px] bg-[#fff1f3] px-4 py-3 text-sm font-black text-[#c03945]"
+              >
+                <TrashIcon className="h-4 w-4" />
+                {classroom.isOwner ? "Delete room" : "Leave room"}
+              </button>
+            </div>
+
+            <div className="rounded-[22px] bg-white p-4 shadow-sm">
+              <div className="flex items-center gap-2 text-[#18317a]">
+                <UsersIcon className="h-5 w-5" />
+                <p className="text-[13px] font-black tracking-[0.28em]">MEMBERS</p>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-3">
+                {classroom.members.map((member) => (
+                  <span
+                    key={member}
+                    className="rounded-full bg-[#eef5ff] px-3 py-2 text-sm font-black text-[#18317a]"
+                  >
+                    {member}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-[22px] bg-white p-4 shadow-sm">
+              <div className="flex items-center gap-2 text-[#18317a]">
+                <BookIcon className="h-5 w-5" />
+                <p className="text-[13px] font-black tracking-[0.28em]">MATERIALS</p>
+              </div>
+
+              <div className="mt-4 space-y-3">
+                {classroom.materials.length ? (
+                  classroom.materials.map((material) => (
+                    <div
+                      key={material}
+                      className="rounded-[18px] bg-[#f7fbff] px-4 py-3 text-sm font-semibold leading-6 break-words text-[#355683]"
+                    >
+                      {material}
+                    </div>
+                  ))
+                ) : (
+                  <div className="rounded-[18px] bg-[#f7fbff] px-4 py-3 text-sm leading-6 text-[#49658c]">
+                    {"No materials yet. Upload a study file into the chat to let Learn'Bot read it."}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-auto rounded-[22px] bg-white px-4 py-4 text-sm leading-7 text-[#49658c] shadow-sm">
+              {'Ask Learn\'Bot with prompts like "summarize the uploaded files", "explain this lesson", or "make a quiz from these notes".'}
+            </div>
+          </aside>
+        </div>
+      </AppShell>
+    </>
   );
 }

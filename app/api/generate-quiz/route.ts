@@ -7,6 +7,8 @@ type GenerateQuizRequestBody = {
   content: string;
   title?: string;
   preferThai?: boolean;
+  difficulty?: "easy" | "medium" | "hard";
+  questionCount?: number;
 };
 
 type RawQuestion = {
@@ -22,10 +24,27 @@ function getGeminiClient() {
   return new GoogleGenAI({ apiKey });
 }
 
-function buildQuizPrompt(content: string, preferThai: boolean) {
+function buildQuizPrompt(
+  content: string,
+  preferThai: boolean,
+  difficulty: "easy" | "medium" | "hard",
+  questionCount: number,
+) {
   const lang = preferThai
     ? "ตอบเป็นภาษาไทยทั้งหมด รวมถึงคำถาม ตัวเลือก และคำอธิบาย"
     : "Reply entirely in English.";
+
+  const difficultyDesc: Record<string, string> = {
+    easy: preferThai
+      ? "ระดับง่าย: ถามความรู้พื้นฐาน ข้อเท็จจริงตรงๆ ที่หาได้ชัดเจนในเนื้อหา คำถามควรเข้าใจง่าย ไม่ซับซ้อน"
+      : "Easy level: ask basic factual recall questions directly stated in the material. Keep questions simple and clear.",
+    medium: preferThai
+      ? "ระดับกลาง: ถามความเข้าใจและการประยุกต์ใช้ความรู้ ต้องอ่านเนื้อหาให้เข้าใจ ไม่ใช่แค่จำคำในเนื้อหา"
+      : "Medium level: ask comprehension and application questions that require understanding, not just memorisation.",
+    hard: preferThai
+      ? "ระดับยาก: ถามการวิเคราะห์ การเปรียบเทียบ หรือการสังเคราะห์ความรู้หลายแนวคิดร่วมกัน ตัวเลือกผิดต้องดูน่าเชื่อถือมาก"
+      : "Hard level: ask analytical, comparative, or multi-concept synthesis questions. Wrong options must be highly plausible.",
+  };
 
   return [
     "You are Learn'Bot, an intelligent quiz generator.",
@@ -33,14 +52,15 @@ function buildQuizPrompt(content: string, preferThai: boolean) {
     "",
     "Your job:",
     "1. Read the study material below carefully.",
-    "2. Identify the 5 most important concepts or facts.",
-    "3. For EACH concept write one multiple-choice question with 4 options.",
+    `2. Identify the ${questionCount} most important concepts or facts.`,
+    `3. For EACH concept write one multiple-choice question with 4 options.`,
+    `   Difficulty guideline: ${difficultyDesc[difficulty]}`,
     "   - Only ONE option must be correct.",
     "   - The 3 wrong options must be plausible but clearly incorrect based on the material.",
     "   - The question must be directly answerable from the material.",
-    "4. Return ONLY a valid JSON array — no markdown fences, no prose, nothing else.",
+    `4. Return ONLY a valid JSON array of exactly ${questionCount} objects — no markdown fences, no prose, nothing else.`,
     "",
-    "JSON schema (array of 5 objects):",
+    `JSON schema (array of ${questionCount} objects):`,
     '[{"prompt":"...","options":["...","...","...","..."],"correctIndex":0,"explanation":"..."}]',
     "",
     "Rules:",
@@ -59,6 +79,8 @@ export async function POST(request: Request) {
   try {
     const body = (await request.json()) as GenerateQuizRequestBody;
     const content = body.content?.trim();
+    const difficulty = body.difficulty ?? "medium";
+    const questionCount = body.questionCount ?? 5;
 
     if (!content || content.length < 50) {
       return NextResponse.json(
@@ -70,7 +92,7 @@ export async function POST(request: Request) {
     const ai = getGeminiClient();
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
-      contents: buildQuizPrompt(content, body.preferThai ?? false),
+      contents: buildQuizPrompt(content, body.preferThai ?? false, difficulty, questionCount),
     });
 
     const raw = response.text?.trim() ?? "";
