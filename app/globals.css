@@ -1,0 +1,86 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f7f4ed;
+  --foreground: #183153;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-body);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top, rgba(140, 201, 255, 0.22), transparent 36%),
+    linear-gradient(180deg, #fbf7ef 0%, #f8fbff 100%);
+  color: var(--foreground);
+  font-family: var(--font-body), sans-serif;
+}
+
+h1,
+h2,
+h3,
+h4,
+.font-display {
+  font-family: var(--font-display), sans-serif;
+}
+
+a {
+  text-decoration: none;
+}
+
+button,
+a[href],
+input,
+textarea,
+select {
+  transition:
+    transform 140ms ease,
+    box-shadow 140ms ease,
+    filter 140ms ease,
+    border-color 140ms ease,
+    background-color 140ms ease;
+}
+
+button:not(:disabled),
+a[href] {
+  cursor: pointer;
+}
+
+button:not(:disabled):hover,
+a[href]:hover {
+  filter: brightness(0.985);
+}
+
+button:not(:disabled):active,
+a[href]:active {
+  transform: translateY(1px) scale(0.99);
+}
+
+button:focus-visible,
+a[href]:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 3px solid rgba(66, 103, 214, 0.22);
+  outline-offset: 3px;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+::selection {
+  background: rgba(140, 201, 255, 0.45);
+}
