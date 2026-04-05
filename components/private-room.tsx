@@ -574,8 +574,9 @@ export function PrivateRoom() {
     router.push(`/quiz?generated=${result.session.id}`);
   }
 
-  function handleCreateFlashcardsFromChat() {
-    const result = createGeneratedFlashcardDeck({
+  async function handleCreateFlashcardsFromChat() {
+    setUploadFeedback("กำลังสร้าง flashcard จากไฟล์... รอสักครู่นะครับ");
+    const result = await createGeneratedFlashcardDeck({
       title: "Flashcards from Private Room",
       sourcePath: "/dashboard",
       sourceTitle: "Private room chat",

@@ -446,12 +446,13 @@ export function ClassroomChatRoom({ classroomId }: ClassroomChatRoomProps) {
     router.push(`/quiz?generated=${result.session.id}`);
   }
 
-  function handleCreateFlashcardsFromChat() {
+  async function handleCreateFlashcardsFromChat() {
     if (!classroom) {
       return;
     }
 
-    const result = createGeneratedFlashcardDeck({
+    setUploadFeedback("กำลังสร้าง flashcard จากไฟล์... รอสักครู่นะครับ");
+    const result = await createGeneratedFlashcardDeck({
       title: `Flashcards from ${classroom.name}`,
       sourcePath: `/classroom/${encodeURIComponent(classroom.id)}`,
       sourceTitle: classroom.name,

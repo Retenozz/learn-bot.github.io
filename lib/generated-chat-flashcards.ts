@@ -1,10 +1,6 @@
 import type { QuizSubject } from "@/data/quiz-bank";
 import type { ChatStudyMessage } from "@/lib/generated-chat-study";
-import {
-  buildChatStudyFacts,
-  extractFlashcardPair,
-  inferStudySubject,
-} from "@/lib/generated-chat-study";
+import { inferStudySubject } from "@/lib/generated-chat-study";
 
 export type GeneratedFlashcard = {
   id: string;
@@ -29,58 +25,128 @@ type CreateGeneratedFlashcardDeckInput = {
   sourcePath: string;
   sourceTitle: string;
   messages: ChatStudyMessage[];
+  cardCount?: number;
 };
 
-function buildCards(deckId: string, facts: string[]) {
-  return facts
-    .map((fact, index) => {
-      const pair = extractFlashcardPair(fact);
+type RawFlashcard = {
+  front: string;
+  back: string;
+};
 
-      if (!pair || pair.front.length < 6 || pair.back.length < 2) {
-        return null;
+// ── ดึงเนื้อหาจริงจาก attachments ในแชท ──────────────────────────────────
+function collectAttachmentContent(messages: ChatStudyMessage[]): string {
+  const parts: string[] = [];
+
+  for (const message of messages) {
+    for (const attachment of message.attachments ?? []) {
+      // ใช้ content (เนื้อหาเต็มจากไฟล์) ก่อน
+      if (attachment.content) {
+        parts.push(`[${attachment.name}]\n${attachment.content}`);
+      } else {
+        // fallback: ใช้ chunks ถ้า content ว่าง
+        for (const chunk of attachment.chunks ?? []) {
+          parts.push(chunk.content);
+        }
       }
+    }
+    // เพิ่ม citation snippets ด้วย
+    for (const citation of message.citations ?? []) {
+      parts.push(citation.snippet);
+    }
+  }
 
-      return {
-        id: `${deckId}-card-${index + 1}`,
-        front: pair.front,
-        back: pair.back,
-        sourceFact: fact,
-      } satisfies GeneratedFlashcard;
-    })
-    .filter(Boolean)
-    .slice(0, 10) as GeneratedFlashcard[];
+  return parts.join("\n\n").trim();
 }
 
-export function createGeneratedFlashcardDeck(
-  input: CreateGeneratedFlashcardDeckInput,
-) {
-  const facts = buildChatStudyFacts(input.messages);
+function hasThaiText(text: string) {
+  return /[\u0E00-\u0E7F]/.test(text);
+}
 
-  if (facts.length < 2) {
+// ── เรียก API route ─────────────────────────────────────────────────────────
+async function callGenerateFlashcardsApi(
+  content: string,
+  preferThai: boolean,
+  cardCount: number,
+): Promise<RawFlashcard[] | null> {
+  try {
+    const response = await fetch("/api/generate-flashcards", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content, preferThai, cardCount }),
+    });
+
+    if (!response.ok) {
+      const payload = (await response.json()) as { error?: string };
+      console.error("generate-flashcards API error:", payload.error);
+      return null;
+    }
+
+    const payload = (await response.json()) as { cards?: RawFlashcard[] };
+    return payload.cards ?? null;
+  } catch (error) {
+    console.error("generate-flashcards fetch failed:", error);
+    return null;
+  }
+}
+
+// ── Main export: async ──────────────────────────────────────────────────────
+export async function createGeneratedFlashcardDeck(
+  input: CreateGeneratedFlashcardDeckInput,
+): Promise<
+  | { ok: true; deck: GeneratedFlashcardDeck }
+  | { ok: false; message: string }
+> {
+  const hasAttachments = input.messages.some(
+    (m) => (m.attachments ?? []).length > 0,
+  );
+
+  if (!hasAttachments) {
     return {
-      ok: false as const,
+      ok: false,
       message:
-        "Add more lesson detail or upload a study file before turning this chat into flashcards.",
+        "อัปโหลดไฟล์เรียนในแชทก่อน แล้วกด \"Flashcards from chat\" เพื่อให้บัตรมาจากเนื้อหาไฟล์ครับ",
+    };
+  }
+
+  const content = collectAttachmentContent(input.messages);
+
+  if (content.length < 30) {
+    return {
+      ok: false,
+      message:
+        "ไม่พบเนื้อหาที่ชัดเจนในไฟล์ที่อัปโหลด ลองอัปโหลดไฟล์ที่มีข้อความมากขึ้น แล้วกด Flashcards อีกครั้งครับ",
+    };
+  }
+
+  const preferThai = hasThaiText(content);
+  const cardCount = input.cardCount ?? 10;
+
+  const rawCards = await callGenerateFlashcardsApi(content, preferThai, cardCount);
+
+  if (!rawCards || rawCards.length === 0) {
+    return {
+      ok: false,
+      message:
+        "ไม่สามารถสร้าง flashcard จากไฟล์นี้ได้ในขณะนี้ ลองอีกครั้งหรืออัปโหลดไฟล์ที่มีเนื้อหาละเอียดกว่าครับ",
     };
   }
 
   const deckId = `chat-flashcards-${Date.now()}`;
-  const cards = buildCards(deckId, facts);
+  const subject = inferStudySubject([content]);
 
-  if (cards.length < 2) {
-    return {
-      ok: false as const,
-      message:
-        "I could not extract enough clear study facts for flashcards yet. Try adding more concrete content into the chat first.",
-    };
-  }
+  const cards: GeneratedFlashcard[] = rawCards.map((raw, index) => ({
+    id: `${deckId}-card-${index + 1}`,
+    front: raw.front,
+    back: raw.back,
+    sourceFact: raw.back,
+  }));
 
-  const subject = inferStudySubject(facts);
   const deck: GeneratedFlashcardDeck = {
     id: deckId,
     title: input.title,
-    description:
-      "This flashcard deck was generated from the current chat and uploaded study materials in the conversation.",
+    description: preferThai
+      ? `บัตรคำ ${cards.length} ใบ สร้างจากไฟล์ที่อัปโหลด โดย Gemini AI`
+      : `${cards.length}-card deck generated by Gemini AI from your uploaded file content.`,
     sourcePath: input.sourcePath,
     sourceTitle: input.sourceTitle,
     subject,
@@ -88,8 +154,5 @@ export function createGeneratedFlashcardDeck(
     createdAt: new Date().toISOString(),
   };
 
-  return {
-    ok: true as const,
-    deck,
-  };
+  return { ok: true, deck };
 }
