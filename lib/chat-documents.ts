@@ -51,9 +51,9 @@ export type AssistantContext = {
   contextText: string;
 };
 
-const MAX_TEXT_FILE_BYTES = 450_000;
-const MAX_PDF_FILE_BYTES = 8_000_000;
-const MAX_DOCX_FILE_BYTES = 7_500_000;
+const MAX_TEXT_FILE_BYTES = 1_000_000;
+const MAX_PDF_FILE_BYTES = 15_000_000;
+const MAX_DOCX_FILE_BYTES = 10_000_000;
 const MAX_IMAGE_FILE_BYTES = 6_000_000;
 const MAX_CONTENT_CHARS = 7_200;
 const MAX_PDF_PAGES = 12;
